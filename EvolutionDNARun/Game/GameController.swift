@@ -45,9 +45,10 @@ final class GameController: NSObject, ObservableObject {
     private var bossMax: Double = 1
     private var playerPower: Double = 0
     private var abilityBonus = 1.0
-    let speed: Float = 9.5
+    // 序盤はゆっくり（初めての人向け）→ ステージ30で最高速
+    var speed: Float { 6.0 + 3.5 * min(1, Float(stage.index - 1) / 29) }
     /// 画面に並べる最大体数（市販の増殖ランナー同様、数十体で頭打ち。実際の数は頭上の数字で表示）
-    private var visibleCap: Int { [30, 14, 7, 4][min(swarm.sizeClass, 3)] }
+    private var visibleCap: Int { let c = [30, 14, 7, 4][min(swarm.sizeClass, 3)]; return GameSettings.quality == 0 ? max(3, c * 2 / 3) : c }
 
     init(stageIndex: Int) {
         stage = StageGenerator.stage(stageIndex)
@@ -58,8 +59,9 @@ final class GameController: NSObject, ObservableObject {
     private func setupScene() {
         view.scene = scene
         view.backgroundColor = .black
-        view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond = 60
+        let q = GameSettings.quality
+        view.antialiasingMode = q == 0 ? .none : .multisampling4X
+        view.preferredFramesPerSecond = q == 0 ? 30 : (q == 2 ? 120 : 60)
         view.isPlaying = true
         view.rendersContinuously = true
         if stage.index <= 10 { WorldJungle.build(into: scene, length: stage.length) }  // オーナー指定のプレイ画面イメージ
@@ -145,7 +147,7 @@ final class GameController: NSObject, ObservableObject {
     func drag(dx: CGFloat, width: CGFloat) {
         if phase == .ready { start() }
         if !dragging { dragging = true; dragStartX = targetX }
-        let tx = Float(dx / max(1, width)) * 9
+        let tx = Float(dx / max(1, width)) * 9 * GameSettings.sensitivity
         targetX = max(-WorldBuilder.laneHalfWidth + 0.6, min(WorldBuilder.laneHalfWidth - 0.6, dragStartX + tx))
     }
     func endDrag() { dragging = false }
@@ -320,7 +322,7 @@ final class GameController: NSObject, ObservableObject {
     }
 
     private func updateLabel() {
-        let t = SCNText(string: "\(displayCount)", extrusionDepth: 0.1)
+        let t = SCNText(string: GameSettings.format(displayCount), extrusionDepth: 0.1)
         t.font = UIFont.systemFont(ofSize: 1.1, weight: .heavy).rounded(); t.flatness = 0.05
         let m = Mat.glow(.white); t.materials = [m]
         countLabel.geometry = t
@@ -344,7 +346,8 @@ final class GameController: NSObject, ObservableObject {
             let t = min(winT / 2.2, 1)
             let ease = t * t * (3 - 2 * t)
             var sx: Float = 0, sy: Float = 0
-            if shake > 0 { shake = max(0, shake - dt); sx = Float.random(in: -1...1) * shake * 0.7; sy = Float.random(in: -1...1) * shake * 0.7 }
+            if !GameSettings.screenShake { shake = 0 }
+        if shake > 0 { shake = max(0, shake - dt); sx = Float.random(in: -1...1) * shake * 0.7; sy = Float.random(in: -1...1) * shake * 0.7 }
             let bp = boss.position
             let target = SCNVector3(bp.x + sin(ease * 0.9) * 7 + sx, 4.2 - ease * 1.2 + sy, bp.z + 15 - ease * 5)
             let p = camera.position; let k = min(1, dt * 3)
@@ -355,6 +358,7 @@ final class GameController: NSObject, ObservableObject {
         let back: Float = phase == .boss || phase == .won ? 13 : 9.5 + spread * 0.8
         let up: Float = phase == .boss || phase == .won ? 6 : 6.5 + spread * 0.5
         var sx: Float = 0, sy: Float = 0
+        if !GameSettings.screenShake { shake = 0 }
         if shake > 0 { shake = max(0, shake - dt); sx = Float.random(in: -1...1) * shake * 0.6; sy = Float.random(in: -1...1) * shake * 0.6 }
         let target = SCNVector3(x * 0.55 + sx, up + sy, z + back)
         let p = camera.position; let k = min(1, dt * 5)
@@ -450,7 +454,7 @@ final class GameController: NSObject, ObservableObject {
             self.scene.addParticleSystem(FX.burst(color: .white, count: 80, speed: 18, size: 0.18), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
             let light = SCNNode(); light.light = SCNLight(); light.light!.type = .omni; light.light!.color = UIColor(red: 0.9, green: 0.5, blue: 1, alpha: 1)
             light.position = center; self.scene.rootNode.addChildNode(light)
-            light.runAction(.sequence([.customAction(duration: 0.8) { n, t in n.light?.intensity = 1200 * (1 - t / 0.8) }, .removeFromParentNode()]))
+            light.runAction(.sequence([.customAction(duration: 0.8) { n, t in n.light?.intensity = (GameSettings.reduceFlash ? 250 : 1200) * (1 - t / 0.8) }, .removeFromParentNode()]))
             // ③ ボスの絵を厚みのある立体の破片に砕き、回転しながら奥行き方向へ飛び散らせる
             Shatter.explode(plane, in: self.scene, toward: self.camera.presentation.worldPosition)
             boss.childNodes.forEach { $0.opacity = 0 }

@@ -18,8 +18,9 @@ final class AudioEngine {
     var popSet = "a"
     var comboStep = 0
 
-    var sfxVolume: Float = 0.9 { didSet { sfxMix.outputVolume = sfxVolume } }
-    var bgmVolume: Float = 0.55 { didSet { bgmMix.outputVolume = bgmVolume } }
+    var muted = false { didSet { sfxMix.outputVolume = muted ? 0 : sfxVolume; bgmMix.outputVolume = muted ? 0 : bgmVolume } }
+    var sfxVolume: Float = 0.9 { didSet { sfxMix.outputVolume = muted ? 0 : sfxVolume } }
+    var bgmVolume: Float = 0.55 { didSet { bgmMix.outputVolume = muted ? 0 : bgmVolume } }
 
     private init() {
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
@@ -112,11 +113,11 @@ final class Haptics {
     }
     func tap(_ intensity: Float, sharp: Float = 0.6) {
         guard enabled else { return }
-        play([CHHapticEvent(eventType: .hapticTransient, parameters: [.init(parameterID: .hapticIntensity, value: intensity), .init(parameterID: .hapticSharpness, value: sharp)], relativeTime: 0)])
+        play([CHHapticEvent(eventType: .hapticTransient, parameters: [.init(parameterID: .hapticIntensity, value: min(1, intensity * GameSettings.hapticStrength)), .init(parameterID: .hapticSharpness, value: sharp)], relativeTime: 0)])
     }
     func rumble(_ dur: Double, intensity: Float = 0.8) {
         guard enabled else { return }
-        play([CHHapticEvent(eventType: .hapticContinuous, parameters: [.init(parameterID: .hapticIntensity, value: intensity), .init(parameterID: .hapticSharpness, value: 0.2)], relativeTime: 0, duration: dur)])
+        play([CHHapticEvent(eventType: .hapticContinuous, parameters: [.init(parameterID: .hapticIntensity, value: min(1, intensity * GameSettings.hapticStrength)), .init(parameterID: .hapticSharpness, value: 0.2)], relativeTime: 0, duration: dur)])
     }
     private func play(_ events: [CHHapticEvent]) {
         guard let engine, let p = try? CHHapticPattern(events: events, parameters: []) else {

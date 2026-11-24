@@ -55,7 +55,10 @@ final class Progress: ObservableObject {
     func setVolumes(bgm: Float, sfx: Float, haptics: Bool) {
         data.bgmVolume = bgm; data.sfxVolume = sfx; data.haptics = haptics; apply(); save()
     }
-    private func apply() {
+    func resetAll() { let keep = (data.bgmVolume, data.sfxVolume, data.haptics); data = SaveData(); (data.bgmVolume, data.sfxVolume, data.haptics) = keep; save() }
+    func apply() {
+        GameSettings.register()
+        AudioEngine.shared.muted = GameSettings.muteAll
         AudioEngine.shared.bgmVolume = data.bgmVolume
         AudioEngine.shared.sfxVolume = data.sfxVolume
         Haptics.shared.enabled = data.haptics

@@ -160,7 +160,7 @@ struct HomeView: View {
             }
         }
         .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse = true } }
-        .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.medium]) }
+        .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.large]) }
     }
 }
 
@@ -212,18 +212,73 @@ struct ShowcaseView: UIViewRepresentable {
 
 struct SettingsView: View {
     @ObservedObject var p = Progress.shared
+    @Environment(\.dismiss) private var dismiss
     @State private var bgm: Float = Progress.shared.data.bgmVolume
     @State private var sfx: Float = Progress.shared.data.sfxVolume
     @State private var haptics = Progress.shared.data.haptics
+    @AppStorage(GameSettings.Key.muteAll) private var muteAll = false
+    @AppStorage(GameSettings.Key.hapticStrength) private var hapticStrength = 1.0
+    @AppStorage(GameSettings.Key.sensitivity) private var sensitivity = 1.0
+    @AppStorage(GameSettings.Key.quality) private var quality = 1
+    @AppStorage(GameSettings.Key.batterySaver) private var batterySaver = false
+    @AppStorage(GameSettings.Key.screenShake) private var screenShake = true
+    @AppStorage(GameSettings.Key.reduceFlash) private var reduceFlash = false
+    @AppStorage(GameSettings.Key.shortNumbers) private var shortNumbers = true
+    @AppStorage(GameSettings.Key.showTutorialHint) private var showHint = true
+    @State private var confirmReset = false
+    @State private var info: String?
+    private var version: String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-") + " (" + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-") + ")" }
+
     var body: some View {
-        Form {
-            Section("サウンド") {
-                HStack { Text("BGM"); Slider(value: $bgm, in: 0...1) }
-                HStack { Text("効果音"); Slider(value: $sfx, in: 0...1) }
-                Toggle("振動", isOn: $haptics)
+        NavigationStack {
+            Form {
+                Section("サウンド") {
+                    Toggle("すべての音をミュート", isOn: $muteAll)
+                    HStack { Label("BGM", systemImage: "music.note"); Slider(value: $bgm, in: 0...1) }.disabled(muteAll)
+                    HStack { Label("効果音", systemImage: "speaker.wave.2.fill"); Slider(value: $sfx, in: 0...1) }.disabled(muteAll)
+                    Button("効果音をテスト") { AudioEngine.shared.play("gate_big") }.disabled(muteAll)
+                }
+                Section("振動") {
+                    Toggle("振動（ハプティクス）", isOn: $haptics)
+                    Picker("強さ", selection: $hapticStrength) { Text("弱").tag(0.5); Text("中").tag(1.0); Text("強").tag(1.5) }
+                        .pickerStyle(.segmented).disabled(!haptics)
+                }
+                Section {
+                    HStack { Text("操作感度"); Slider(value: $sensitivity, in: 0.5...2.0, step: 0.1); Text(String(format: "%.1f", sensitivity)).monospacedDigit().frame(width: 34) }
+                    Toggle("スタート時の操作ガイドを表示", isOn: $showHint)
+                } header: { Text("操作") } footer: { Text("感度を上げると、少しのスワイプで大きく動きます。") }
+                Section {
+                    Picker("画質", selection: $quality) { Text("省電力").tag(0); Text("標準").tag(1); Text("高画質").tag(2) }
+                        .pickerStyle(.segmented).disabled(batterySaver)
+                    Toggle("バッテリー節約モード", isOn: $batterySaver)
+                    Toggle("画面の揺れ", isOn: $screenShake)
+                    Toggle("強い光の点滅をおさえる", isOn: $reduceFlash)
+                    Toggle("大きな数を短く表示（1.2K）", isOn: $shortNumbers)
+                } header: { Text("画面・グラフィック") } footer: { Text("画質の変更は次のステージから反映されます。高画質は120fps対応端末でなめらかになります。") }
+                Section("データ") {
+                    LabeledContent("進行状況", value: "ステージ \(p.data.currentStage)")
+                    LabeledContent("所持DNA", value: "\(p.data.dna)")
+                    Button("購入を復元") { info = "アプリ内課金は準備中です。" }
+                    Button("進行状況をリセット", role: .destructive) { confirmReset = true }
+                }
+                Section("サポート") {
+                    Button("遊び方") { info = "左右にスワイプしてゲートを選び、仲間を増やしましょう。\nボスの弱点の属性に進化すると2倍のダメージ！\n10体以上で「融合」ゲートを通ると強い個体に。" }
+                    Button("プライバシーポリシー") { info = "公開前に掲載予定です。" }
+                    Button("利用規約") { info = "公開前に掲載予定です。" }
+                    Button("クレジット") { info = "Evolution DNA Run\n企画・開発・音楽: AI開発チーム\nイラスト: オーナー提供" }
+                    LabeledContent("バージョン", value: version)
+                }
             }
+            .navigationTitle("設定").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
         }
         .onChange(of: bgm) { _, _ in commit() }.onChange(of: sfx) { _, _ in commit() }.onChange(of: haptics) { _, _ in commit() }
+        .onChange(of: muteAll) { _, v in AudioEngine.shared.muted = v }
+        .onChange(of: hapticStrength) { _, _ in Haptics.shared.tap(0.8) }
+        .confirmationDialog("進行状況をリセットしますか？", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("リセットする", role: .destructive) { p.resetAll() }
+        } message: { Text("クリアしたステージ・DNA・図鑑がすべて消えます。元に戻せません。") }
+        .alert("お知らせ", isPresented: Binding(get: { info != nil }, set: { if !$0 { info = nil } })) { Button("OK") {} } message: { Text(info ?? "") }
     }
     private func commit() { p.setVolumes(bgm: bgm, sfx: sfx, haptics: haptics) }
 }
@@ -333,7 +388,7 @@ struct GameScreen: View {
                     .transition(.scale.combined(with: .opacity))
                 }
                 Spacer()
-                if game.phase == .ready {
+                if game.phase == .ready && (GameSettings.showHint || game.stage.index <= 3) {
                     VStack(spacing: 8) {
                         Image(systemName: "hand.draw.fill").font(.system(size: 44)).foregroundStyle(.white)
                         Text("左右にスワイプしてスタート").font(DS.font(20)).foregroundStyle(.white)
