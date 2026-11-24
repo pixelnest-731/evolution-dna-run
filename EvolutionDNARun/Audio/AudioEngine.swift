@@ -63,9 +63,8 @@ final class AudioEngine {
         if let l = lastPlay[name], now - l < 0.03 { return }   // 同一音の連打抑制
         lastPlay[name] = now
         let v = voices[nextVoice]; nextVoice = (nextVoice + 1) % voices.count
-        v.stop(); v.volume = volume
-        v.scheduleBuffer(b, at: nil, options: .interrupts)
-        v.play()
+        // stop/play はオーディオスレッドと同期するため実機でメインを止めないよう専用キューで実行
+        sfxQ.async { v.stop(); v.volume = volume; v.scheduleBuffer(b, at: nil, options: .interrupts); v.play() }
     }
 
     /// 連続ゲート通過で音程がペンタトニックに上昇
@@ -80,11 +79,14 @@ final class AudioEngine {
         guard engine.isRunning else { return }
         let names = ["bgm_micro_base", "bgm_micro_arp", "bgm_micro_drums"]
         let startTime = AVAudioTime(hostTime: mach_absolute_time() + 4_000_000)
-        for (i, p) in stems.enumerated() {
-            guard let b = buffers[names[i]] else { continue }
-            p.volume = i == 0 ? 1 : 0
-            p.scheduleBuffer(b, at: nil, options: .loops)
-            p.play(at: startTime)
+        let st = stems, bufs = names.map { buffers[$0] }
+        sfxQ.async {   // stop() と同じキューで順番に実行（停止→再生の順序を保証）
+            for (i, p) in st.enumerated() {
+                guard let b = bufs[i] else { continue }
+                p.volume = i == 0 ? 1 : 0
+                p.scheduleBuffer(b, at: nil, options: .loops)
+                p.play(at: startTime)
+            }
         }
         stemTarget = [1, 0, 0]
         fadeTimer?.invalidate()
@@ -98,7 +100,8 @@ final class AudioEngine {
         stemTarget = [1, level >= 1 ? 0.9 : 0, level >= 2 ? 1 : 0]
     }
     func duck(_ on: Bool) { stemTarget[0] = on ? 0.3 : 1 }
-    func stop() { stems.forEach { $0.stop() } }
+    func stop() { let st = stems; sfxQ.async { st.forEach { $0.stop() } } }
+    private let sfxQ = DispatchQueue(label: "sfx", qos: .userInteractive)
 }
 
 /// 音・映像・振動を同期させるための触覚
@@ -109,8 +112,11 @@ final class Haptics {
     private init() {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
         engine = try? CHHapticEngine(); engine?.isAutoShutdownEnabled = true
-        try? engine?.start()
+        engine?.resetHandler = { [weak self] in self?.q.async { try? self?.engine?.start() } }
+        q.async { [weak self] in try? self?.engine?.start() }
     }
+    /// CHHapticEngine.start() は実機で数百ms〜ブロックすることがあるため、メインスレッドでは呼ばない
+    private let q = DispatchQueue(label: "haptics", qos: .userInitiated)
     func tap(_ intensity: Float, sharp: Float = 0.6) {
         guard enabled else { return }
         play([CHHapticEvent(eventType: .hapticTransient, parameters: [.init(parameterID: .hapticIntensity, value: min(1, intensity * GameSettings.hapticStrength)), .init(parameterID: .hapticSharpness, value: sharp)], relativeTime: 0)])
@@ -123,6 +129,6 @@ final class Haptics {
         guard let engine, let p = try? CHHapticPattern(events: events, parameters: []) else {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred(); return
         }
-        try? engine.start(); try? engine.makePlayer(with: p).start(atTime: 0)
+        q.async { try? engine.start(); try? engine.makePlayer(with: p).start(atTime: 0) }
     }
 }

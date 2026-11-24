@@ -404,7 +404,7 @@ struct GameScreen: View {
                         StageDots(progress: game.progress, minis: game.miniMarks)
                     }
                     Spacer()
-                    GemCounter(value: progress.data.dna + game.dnaCollected).scaleEffect(0.85)
+                    GemCounter(value: progress.data.dna + (game.phase == .won ? 0 : game.dnaCollected)).scaleEffect(0.85)
                 }.padding(.horizontal, 12).padding(.top, 4)
                 HStack(alignment: .top) {
                     EvolutionPanel(element: game.element, sizeClass: game.sizeClass)

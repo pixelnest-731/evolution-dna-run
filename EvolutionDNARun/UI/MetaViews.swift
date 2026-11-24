@@ -12,8 +12,9 @@ final class AdService: ObservableObject {
     private var window: UIWindow?
     /// シートより前面に出すため専用ウィンドウで表示
     private func present() {
+        window?.isHidden = true; window = nil   // 前の広告ウィンドウが残って操作をふさがないように
         if let req = current {
-            guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+            guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { current = nil; req.done(!req.rewarded); return }
             let w = UIWindow(windowScene: scene); w.windowLevel = .alert + 1
             let vc = UIHostingController(rootView: AdOverlay(req: req)); vc.view.backgroundColor = .clear
             w.rootViewController = vc; w.makeKeyAndVisible(); window = w
