@@ -96,7 +96,7 @@ struct SheetFrame<Content: View>: View {
                 .background(LinearGradient(colors: [Color(red: 0.3, green: 0.22, blue: 0.6), Color(red: 0.12, green: 0.12, blue: 0.32)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
                 .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { GemCounter(value: progress.data.dna).scaleEffect(0.75) }
+                    ToolbarItem(placement: .topBarLeading) { GemCounter(value: progress.data.dna).fixedSize().scaleEffect(0.75) }
                     ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
                 }
         }

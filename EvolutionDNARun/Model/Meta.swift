@@ -145,7 +145,7 @@ final class Meta: ObservableObject {
         Progress.shared.addDNA(result.dna); save(); return result
     }
     /// 色違い（金色）キャラを付与。返り値は表示名
-    private func grantShiny() -> String? {
+    func grantShiny() -> String? {
         let all = [Element.fire, .ice, .thunder, .none].flatMap { e in (0..<4).map { (e, $0) } }
         guard let (e, k) = all.filter({ !d.shiny.contains("\($0.0.rawValue)-\($0.1)") }).randomElement() else { return nil }
         d.shiny.insert("\(e.rawValue)-\(k)")
@@ -173,7 +173,7 @@ final class Meta: ObservableObject {
     func usedAdRevive() { d.adRevivesToday += 1; save() }
     /// インタースティシャル：ステージ6以降・3クリアごと・前回から90秒以上
     func shouldShowInterstitial(stage: Int) -> Bool {
-        guard stage >= 6, Progress.shared.data.stagesSinceAd >= 3, Date().timeIntervalSince(d.lastInterstitial) > 90 else { return false }
+        guard !Shop.shared.s.noAds, stage >= 6, Progress.shared.data.stagesSinceAd >= 3, Date().timeIntervalSince(d.lastInterstitial) > 90 else { return false }
         d.lastInterstitial = Date(); Progress.shared.resetAdCounter(); save(); return true
     }
 }

@@ -33,6 +33,12 @@ final class GameController: NSObject, ObservableObject {
     private var gateNodes: [(row: Int, left: SCNNode, right: SCNNode)] = []
     private var obstacles: [(def: ObstacleDef, node: SCNNode, hit: Bool)] = []
     private var nextRow = 0
+    private var minis: [(def: MiniBossDef, node: SCNNode)] = []
+    private var nextMini = 0
+    private var clashT: Float?
+    @Published var miniBossesDefeated = 0
+    /// HUD用：小ボスのコース上の位置（0〜1）
+    var miniMarks: [Float] { stage.minis.map { min(1, $0.z / (stage.length + 8)) } }
     private var bossNode: SCNNode?
     private var link: CADisplayLink?
     private var last: CFTimeInterval = 0
@@ -62,8 +68,10 @@ final class GameController: NSObject, ObservableObject {
         stage = StageGenerator.stage(stageIndex)
         super.init()
         // 強化レベル＋広告ブーストをスタート時の仲間数に反映
-        swarm.count = Meta.shared.startCount * RunBoost.startMultiplier
-        if RunBoost.startMultiplier > 1 { startBoosted = true }
+        var mult = RunBoost.startMultiplier
+        if mult == 1 && RunBoost.bossRush == nil && Shop.shared.useStartTicket() { mult = 2 }
+        swarm.count = Meta.shared.startCount * mult
+        if mult > 1 { startBoosted = true }
         RunBoost.startMultiplier = 1
         displayCount = swarm.count
         setupScene()
@@ -134,7 +142,19 @@ final class GameController: NSObject, ObservableObject {
                 scene.rootNode.addChildNode(h); pickups.append((h, z0, lane, false))
             }
         }
+        for m in stage.minis {
+            let n = BossFactory.build(BossKind(rawValue: m.boss.kind) ?? .moth)
+            n.scale = SCNVector3(0.42, 0.42, 0.42); n.position = SCNVector3(0, 0, m.z - 1.5)
+            let wrap = SCNNode(); wrap.addChildNode(n)
+            let hp = SCNNode(geometry: { let t = SCNText(string: "HP " + GameSettings.format(Int(m.boss.hp)) + " " + m.boss.weakness.symbol, extrusionDepth: 0.05)
+                t.font = UIFont.systemFont(ofSize: 0.5, weight: .heavy).rounded(); t.flatness = 0.05; t.materials = [Mat.glow(UIColor(red: 1, green: 0.55, blue: 0.55, alpha: 1))]; return t }())
+            let (mn, mx) = hp.boundingBox; hp.pivot = SCNMatrix4MakeTranslation((mx.x + mn.x) / 2, mn.y, 0)
+            hp.position = SCNVector3(0, 3.4, m.z - 1.5); hp.constraints = [SCNBillboardConstraint()]; hp.name = "hp"
+            wrap.addChildNode(hp)
+            scene.rootNode.addChildNode(wrap); minis.append((m, wrap))
+        }
         let boss = BossFactory.build(BossKind(rawValue: stage.boss.kind) ?? .gorilla); boss.position = SCNVector3(0, 0, stage.length - 4)
+        if stage.isWorldBoss { boss.scale = SCNVector3(1.35, 1.35, 1.35) }
         scene.rootNode.addChildNode(boss); bossNode = boss
         bossMax = stage.boss.hp; bossHP = 1
 
@@ -179,6 +199,13 @@ final class GameController: NSObject, ObservableObject {
 
     // MARK: - 走行
     private func runStep(_ dt: Float) {
+        if clashT != nil { clashStep(dt); return }
+        if nextMini < minis.count, z <= minis[nextMini].def.z + 2.5 {
+            clashT = 0; targetX = 0
+            AudioEngine.shared.play("boss_roar", volume: 0.6); Haptics.shared.rumble(0.4, intensity: 0.5); shake = 0.25
+            popup(String(localized: "小ボス出現！"), .orange)
+            return
+        }
         z -= speed * dt
         x += (targetX - x) * min(1, dt * 12)
         swarmNode.position = SCNVector3(x, 0, z)
@@ -214,6 +241,38 @@ final class GameController: NSObject, ObservableObject {
             }
         }
         if z <= stage.length + 8 { beginBoss() }
+    }
+
+    /// 小ボス戦（約1秒の自動バトル）
+    private func clashStep(_ dt: Float) {
+        guard var t = clashT else { return }
+        let m = minis[nextMini]
+        x += (0 - x) * min(1, dt * 6); swarmNode.position = SCNVector3(x, 0, z)
+        let before = t; t += dt; clashT = t
+        if Int(t * 12) != Int(before * 12), let u = units.randomElement() {
+            let shot = SCNNode(geometry: SCNSphere(radius: 0.14)); shot.geometry!.materials = [Mat.glow(Palette.color(swarm.element).lighter(0.4))]
+            shot.position = SCNVector3(x + u.position.x, 0.7, z + u.position.z); scene.rootNode.addChildNode(shot)
+            shot.runAction(.sequence([.move(to: SCNVector3(Float.random(in: -0.8...0.8), 1.6, m.def.z - 1), duration: 0.2), .removeFromParentNode()]))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self else { return }
+                AudioEngine.shared.play("boss_hit", volume: 0.45); Haptics.shared.tap(0.35, sharp: 0.8)
+                if let b = m.node.childNodes.first { self.bossHitReaction(b) }
+            }
+        }
+        guard t >= 1.0 else { return }
+        clashT = nil
+        let old = swarm.count
+        if swarm.fight(m.def.boss) {
+            nextMini += 1; miniBossesDefeated += 1; dnaCollected += 5
+            AudioEngine.shared.play("shatter", volume: 0.7); Haptics.shared.tap(1, sharp: 0.7); shake = 0.4
+            let p = SCNVector3(0, 1.5, m.def.z - 1.5)
+            scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.7, blue: 0.3, alpha: 1), count: 220, speed: 10, size: 0.3), transform: SCNMatrix4MakeTranslation(p.x, p.y, p.z))
+            m.node.runAction(.sequence([.group([.scale(to: 0.01, duration: 0.3), .rotateBy(x: 0, y: .pi * 2, z: 0, duration: 0.3)]), .removeFromParentNode()]))
+            popup(String(localized: "小ボス撃破！"), .yellow)
+            afterCountChange(old: old)
+        } else {
+            lose()
+        }
     }
 
     private var spread: Float { Float(sqrt(Double(min(swarm.count, visibleCap)))) * 0.28 * unitScale }
@@ -507,9 +566,9 @@ final class GameController: NSObject, ObservableObject {
     }
 
     /// 広告視聴で復活：ボス戦なら残りHPから仲間の力2倍で再戦、道中なら仲間10体で再開
-    func revive() {
+    func revive(byTicket: Bool = false) {
         guard phase == .lost, !revived else { return }
-        revived = true; Meta.shared.usedAdRevive()
+        revived = true; if !byTicket { Meta.shared.usedAdRevive() }
         AudioEngine.shared.startBGM(); AudioEngine.shared.setIntensity(2)
         if lostInBoss {
             bossMax *= max(0.05, bossHP); battleT = 0; revivePower = 2
@@ -517,6 +576,9 @@ final class GameController: NSObject, ObservableObject {
             popup(String(localized: "復活！ 攻撃力2倍"), .yellow)
         } else {
             swarm.count = max(10, Meta.shared.startCount * 5); displayCount = swarm.count
+            if nextMini < minis.count, z <= minis[nextMini].def.z + 3 {
+                minis[nextMini].node.runAction(.sequence([.scale(to: 0.01, duration: 0.3), .removeFromParentNode()])); nextMini += 1
+            }
             rebuildUnits(animated: true); updateLabel()
             phase = .running; last = CACurrentMediaTime()
             popup(String(localized: "復活！"), .yellow)

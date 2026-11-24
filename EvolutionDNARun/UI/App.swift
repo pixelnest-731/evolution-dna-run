@@ -3,6 +3,7 @@ import SceneKit
 
 @main
 struct EvolutionDNARunApp: App {
+    init() { _ = Shop.shared }   // 起動直後から未処理の購入(Transaction.updates)を受け取る
     var body: some Scene { WindowGroup { RootView().preferredColorScheme(.dark).statusBarHidden() } }
 }
 
@@ -18,7 +19,7 @@ enum DS {
 }
 
 struct RootView: View {
-    enum Screen: Equatable { case home, game(Int), collection }
+    enum Screen: Equatable { case home, game(Int), collection, map }
     @State private var screen: Screen = .home
     @State private var runID = 0   // 同じステージのリトライでもゲームを作り直す
     @ObservedObject var progress = Progress.shared
@@ -29,11 +30,13 @@ struct RootView: View {
         ZStack {
             switch screen {
             case .home:
-                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = .game(d > 0 ? d : progress.data.currentStage) },
+                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = d > 0 ? .game(d) : .map },
                          onCollection: { screen = .collection },
                          onBossRush: { RunBoost.bossRush = 0; runID += 1; screen = .game(RootView.rushStage(0)) })
             case .game(let s):
                 GameScreen(stageIndex: s, onExit: { next in runID += 1; if next == nil { RunBoost.bossRush = nil }; screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
+            case .map:
+                MapView(onPlay: { n in RunBoost.bossRush = nil; runID += 1; screen = .game(n) }, onClose: { screen = .home })
             case .collection:
                 CollectionView(onClose: { screen = .home })
             }
@@ -81,20 +84,26 @@ struct GemCounter: View {
     }
 }
 
-/// ステージ進行：丸ドット＋王冠
+/// ステージ進行：バー＋小ボス(😈)の位置＋ゴールの王冠
 struct StageDots: View {
     let progress: Float
+    var minis: [Float] = []
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<4) { i in
-                let reached = progress >= Float(i) / 4
-                Circle().fill(i == 0 ? DS.good : (reached ? DS.gold : Color(white: 0.3)))
-                    .overlay(Circle().stroke(.white, lineWidth: 2)).frame(width: 20, height: 20)
-                Rectangle().fill(progress >= Float(i + 1) / 4 ? DS.gold : Color(white: 0.35)).frame(height: 5)
-            }
-            Text("👑").font(.system(size: 22))
+        HStack(spacing: 4) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(white: 0.3)).frame(height: 8)
+                    Capsule().fill(DS.gold).frame(width: max(8, g.size.width * CGFloat(progress)), height: 8)
+                    ForEach(Array(minis.enumerated()), id: \.offset) { _, m in
+                        Text(progress >= m ? "💥" : "😈").font(.system(size: 16)).position(x: g.size.width * CGFloat(m), y: g.size.height / 2)
+                    }
+                    Circle().fill(DS.good).overlay(Circle().stroke(.white, lineWidth: 2)).frame(width: 14, height: 14)
+                        .position(x: g.size.width * CGFloat(progress), y: g.size.height / 2)
+                }
+            }.frame(height: 22)
+            Text("👑").font(.system(size: 20))
         }
-        .frame(width: 190)
+        .frame(width: 200)
     }
 }
 
@@ -116,7 +125,7 @@ struct HomeView: View {
     @ObservedObject var meta = Meta.shared
     @State private var showSettings = false
     @State private var sheet: HomeSheet?
-    enum HomeSheet: String, Identifiable { case login, daily, chest, upgrade; var id: String { rawValue } }
+    enum HomeSheet: String, Identifiable { case login, daily, chest, upgrade, shop; var id: String { rawValue } }
     @State private var pulse = false
     var body: some View {
         ZStack {
@@ -144,19 +153,21 @@ struct HomeView: View {
                 }
                 .shadow(color: DS.navy, radius: 0, x: 0, y: 4).shadow(color: DS.navy, radius: 0, x: 2, y: 0).shadow(color: DS.navy, radius: 0, x: -2, y: 0)
                 .padding(.top, 8)
-                HStack(spacing: 10) {
+                Spacer()
+                // ボタンはドラゴンの足元より下にまとめ、顔と体を隠さない
+                HStack(spacing: 8) {
                     MetaButton(icon: "calendar", title: "ログボ", color: .pink, badge: meta.loginAvailable ? 1 : 0) { sheet = .login }
                     MetaButton(icon: "checklist", title: "ミッション", color: .orange, badge: meta.unclaimedMissions) { sheet = .daily }
                     MetaButton(icon: "gift.fill", title: "宝箱", color: .purple, badge: meta.freeChestReady ? 1 : 0) { sheet = .chest }
                     MetaButton(icon: "arrow.up.circle.fill", title: "強化", color: .green, badge: 0) { sheet = .upgrade }
-                }.padding(.top, 10)
-                Spacer()
+                    MetaButton(icon: "cart.fill", title: "ショップ", color: Color(red: 0.95, green: 0.7, blue: 0.1), badge: 0) { sheet = .shop }
+                }.padding(.bottom, 12)
                 Button(action: { AudioEngine.shared.play("tap"); onPlay() }) {
                     HStack(spacing: 12) {
                         Image(systemName: "play.fill").font(.system(size: 44, weight: .black))
                         VStack(alignment: .leading, spacing: -2) {
                             Text("PLAY").font(DS.font(30, .black))
-                            Text("STAGE \(progress.data.currentStage)").font(DS.font(14, .bold)).opacity(0.9)
+                            Text("WORLD \(World.of(progress.data.currentStage) + 1) · STAGE \(progress.data.currentStage)").font(DS.font(14, .bold)).opacity(0.9)
                         }
                     }
                     .foregroundStyle(.white).shadow(color: .black.opacity(0.25), radius: 0, x: 0, y: 2)
@@ -164,22 +175,26 @@ struct HomeView: View {
                 }
                 .buttonStyle(GameButtonStyle(top: Color(red: 0.55, green: 0.98, blue: 0.3), bottom: Color(red: 0.15, green: 0.72, blue: 0.15), radius: 46))
                 .scaleEffect(pulse ? 1.03 : 1)
-                Button(action: { AudioEngine.shared.play("tap"); onCollection() }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "book.fill").font(.system(size: 26, weight: .bold))
-                        Text("図鑑").font(DS.font(20))
-                    }.foregroundStyle(.white).frame(width: 150, height: 64)
-                }
-                .buttonStyle(GameButtonStyle(top: Color(red: 1, green: 0.85, blue: 0.3), bottom: Color(red: 0.95, green: 0.6, blue: 0.1), radius: 32))
-                .padding(.top, 14)
-                Button(action: { AudioEngine.shared.play("tap"); onBossRush() }) {
-                    HStack(spacing: 6) { Image(systemName: "flame.fill"); Text("ボスラッシュ"); Text("最高 \(meta.d.bossRushBest) 連勝").font(DS.font(12, .bold)).opacity(0.85) }
-                        .font(DS.font(17, .black)).foregroundStyle(.white).padding(.horizontal, 18).frame(height: 46)
+                HStack(spacing: 10) {
+                    Button(action: { AudioEngine.shared.play("tap"); onCollection() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "book.fill").font(.system(size: 20, weight: .bold))
+                            Text("図鑑").font(DS.font(18))
+                        }.foregroundStyle(.white).frame(width: 120, height: 52)
+                    }
+                    .buttonStyle(GameButtonStyle(top: Color(red: 1, green: 0.85, blue: 0.3), bottom: Color(red: 0.95, green: 0.6, blue: 0.1), radius: 26))
+                    Button(action: { AudioEngine.shared.play("tap"); onBossRush() }) {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 4) { Image(systemName: "flame.fill"); Text("ボスラッシュ") }.font(DS.font(16, .black))
+                            Text("最高 \(meta.d.bossRushBest) 連勝").font(DS.font(11, .bold)).opacity(0.85)
+                        }
+                        .foregroundStyle(.white).frame(width: 170, height: 52)
                         .background(LinearGradient(colors: [Color(red: 0.95, green: 0.3, blue: 0.3), Color(red: 0.6, green: 0.1, blue: 0.3)], startPoint: .top, endPoint: .bottom), in: Capsule())
-                        .overlay(Capsule().stroke(DS.gold, lineWidth: 2))
+                        .overlay(Capsule().stroke(DS.gold, lineWidth: 3))
+                    }
+                    .opacity(progress.data.currentStage >= 4 ? 1 : 0.4).disabled(progress.data.currentStage < 4)
                 }
-                .opacity(progress.data.currentStage >= 4 ? 1 : 0.4).disabled(progress.data.currentStage < 4)
-                .padding(.top, 10).padding(.bottom, 26)
+                .padding(.top, 14).padding(.bottom, 20)
             }
         }
         .onAppear {
@@ -192,6 +207,7 @@ struct HomeView: View {
             case .daily: DailyView()
             case .chest: ChestView()
             case .upgrade: UpgradeView()
+            case .shop: ShopView()
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.large]) }
@@ -292,7 +308,7 @@ struct SettingsView: View {
                 Section("データ") {
                     LabeledContent("進行状況", value: "ステージ \(p.data.currentStage)")
                     LabeledContent("所持DNA", value: "\(p.data.dna)")
-                    Button("購入を復元") { info = "アプリ内課金は準備中です。" }
+                    Button("購入を復元") { Task { await Shop.shared.restore(); info = Shop.shared.message; Shop.shared.message = nil } }
                     Button("進行状況をリセット", role: .destructive) { confirmReset = true }
                 }
                 Section("サポート") {
@@ -383,9 +399,9 @@ struct GameScreen: View {
                     CircleIcon(icon: "house.fill") { game.stop(); onExit(nil) }
                     Spacer()
                     VStack(spacing: 4) {
-                        Text("STAGE \(game.stage.index)").font(DS.font(18, .black)).foregroundStyle(.white)
+                        Text(game.stage.isWorldBoss ? "STAGE \(game.stage.index) 👑" : "STAGE \(game.stage.index)").font(DS.font(18, .black)).foregroundStyle(.white)
                             .padding(.horizontal, 18).padding(.vertical, 3).background(DS.navy.opacity(0.85), in: Capsule())
-                        StageDots(progress: game.progress)
+                        StageDots(progress: game.progress, minis: game.miniMarks)
                     }
                     Spacer()
                     GemCounter(value: progress.data.dna + game.dnaCollected).scaleEffect(0.85)
@@ -395,7 +411,7 @@ struct GameScreen: View {
                     Spacer()
                     if game.phase == .boss || game.phase == .won {
                         VStack(spacing: 4) {
-                            Text("\(game.stage.boss.name)  弱点 \(game.stage.boss.weakness.symbol)").font(DS.font(14)).foregroundStyle(.white)
+                            Text("\(game.stage.isWorldBoss ? "👑 " : "")\(game.stage.boss.name)  弱点 \(game.stage.boss.weakness.symbol)").font(DS.font(14)).foregroundStyle(.white)
                             ProgressBar(value: Float(game.bossHP), color: Color(red: 1, green: 0.3, blue: 0.45)).frame(width: 180)
                         }.padding(10).background(DS.navy.opacity(0.8), in: RoundedRectangle(cornerRadius: 16)).transition(.scale)
                     }
@@ -514,6 +530,12 @@ struct ResultCard: View {
                     Text(hp < 0.3 ? "おしい！ あと \(max(1, Int(hp * 100)))% で倒せた！" : "ボスの残りHP \(Int(hp * 100))%").font(DS.font(20, .black))
                         .foregroundStyle(hp < 0.3 ? .yellow : .white)
                     ProgressView(value: 1 - hp).tint(.red).frame(width: 220)
+                }
+                if !game.revived && Shop.shared.s.reviveTickets > 0 {
+                    Button { if Shop.shared.useReviveTicket() { game.revive(byTicket: true) } } label: {
+                        Label("復活チケットを使う（残り\(Shop.shared.s.reviveTickets)）", systemImage: "heart.fill").font(DS.font(16, .black)).foregroundStyle(.white)
+                            .padding(.horizontal, 16).frame(height: 46).background(Color.pink, in: Capsule())
+                    }
                 }
                 if !game.revived && Meta.shared.canAdRevive {
                     AdButton(title: game.lostBossHP != nil ? "広告で復活！攻撃力2倍" : "広告でその場から復活") {
