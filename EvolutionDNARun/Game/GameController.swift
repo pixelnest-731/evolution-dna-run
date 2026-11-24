@@ -44,6 +44,14 @@ final class GameController: NSObject, ObservableObject {
     private var battleT: Double = 0
     private var bossMax: Double = 1
     private var playerPower: Double = 0
+    private var revivePower: Double = 1
+    private var lostInBoss = false
+    @Published var startBoosted = false
+    @Published var revived = false
+    /// 負けた時のボス残りHP（0〜1）。ニアミス演出用
+    @Published var lostBossHP: Double?
+    var isBossRush: Bool { RunBoost.bossRush != nil }
+    var rewardDNA: Int { Int(Double(20 + stage.index * 5 + dnaCollected) * Meta.shared.dnaMultiplier) }
     private var abilityBonus = 1.0
     // 序盤はゆっくり（初めての人向け）→ ステージ30で最高速
     var speed: Float { 6.0 + 3.5 * min(1, Float(stage.index - 1) / 29) }
@@ -53,6 +61,11 @@ final class GameController: NSObject, ObservableObject {
     init(stageIndex: Int) {
         stage = StageGenerator.stage(stageIndex)
         super.init()
+        // 強化レベル＋広告ブーストをスタート時の仲間数に反映
+        swarm.count = Meta.shared.startCount * RunBoost.startMultiplier
+        if RunBoost.startMultiplier > 1 { startBoosted = true }
+        RunBoost.startMultiplier = 1
+        displayCount = swarm.count
         setupScene()
     }
 
@@ -134,6 +147,7 @@ final class GameController: NSObject, ObservableObject {
     func start() {
         guard phase == .ready else { return }
         phase = .running
+        Meta.shared.track(.play)
         AudioEngine.shared.comboStep = 0
         AudioEngine.shared.startBGM()
         last = CACurrentMediaTime()
@@ -171,7 +185,7 @@ final class GameController: NSObject, ObservableObject {
         progress = min(1, z / (stage.length + 8))
 
         for i in pickups.indices where !pickups[i].taken && abs(z - pickups[i].z) < 0.7 && abs(x - pickups[i].x) < 0.8 + spread * 0.7 {
-            pickups[i].taken = true; dnaCollected += 1
+            pickups[i].taken = true; dnaCollected += 1; Meta.shared.track(.dna)
             let n = pickups[i].node
             n.runAction(.sequence([.group([.move(by: SCNVector3(0, 1.5, 0), duration: 0.25), .scale(to: 0.01, duration: 0.25)]), .removeFromParentNode()]))
             scene.addParticleSystem(FX.burst(color: UIColor(red: 0.7, green: 0.6, blue: 1, alpha: 1), count: 40, speed: 3, size: 0.15), transform: SCNMatrix4MakeTranslation(n.position.x, 1, n.position.z))
@@ -208,6 +222,7 @@ final class GameController: NSObject, ObservableObject {
     private func passGate(_ g: GateKind, node: SCNNode, other: SCNNode) {
         let old = swarm.count; let oldClass = swarm.sizeClass; let oldEl = swarm.element
         swarm.apply(g)
+        Meta.shared.track(.gate)
         node.runAction(.sequence([.group([.scale(to: 1.25, duration: 0.12), .fadeOut(duration: 0.3)]), .removeFromParentNode()]))
         other.runAction(.sequence([.fadeOpacity(to: 0.0, duration: 0.25), .removeFromParentNode()]))
         let c = GateBuilder.color(g)
@@ -223,9 +238,9 @@ final class GameController: NSObject, ObservableObject {
             AudioEngine.shared.pop(scale: n >= 5 ? 3 : 2); Haptics.shared.tap(n >= 5 ? 1 : 0.7); popup(g.label, .green)
             if n >= 5 { shake = 0.15 }
         case .evolve(let e):
-            if e != oldEl { evolveFX(e) }
+            if e != oldEl { evolveFX(e); Meta.shared.track(.evolve) }
         case .fuse:
-            if swarm.sizeClass != oldClass { fuseFX() } else { popup(String(localized: "融合には10体必要"), .gray) }
+            if swarm.sizeClass != oldClass { fuseFX(); Meta.shared.track(.fuse) } else { popup(String(localized: "融合には10体必要"), .gray) }
         }
         if swarm.count == 0 { lose(); return }
         if case .evolve = g { return }
@@ -388,7 +403,7 @@ final class GameController: NSObject, ObservableObject {
         x += (0 - x) * Float(min(1, dt * 4)); swarmNode.position = SCNVector3(x, 0, z)
         battleT += dt
         let duration = 3.0
-        let dealt = playerPower * abilityBonus * min(1, battleT / duration)
+        let dealt = playerPower * abilityBonus * Meta.shared.powerMultiplier * revivePower * min(1, battleT / duration)
         bossHP = max(0, 1 - dealt / bossMax)
         // 攻撃の視覚化：ユニットが突進
         if Int(battleT * 10) != Int((battleT - dt) * 10), let u = units.randomElement(), let boss = bossNode {
@@ -473,13 +488,40 @@ final class GameController: NSObject, ObservableObject {
         }
         // ⑤ ファンファーレ 2.1秒
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { AudioEngine.shared.play("win") }
-        Progress.shared.clear(stage: stage.index, dna: 20 + stage.index * 5 + dnaCollected, element: swarm.element, sizeClass: swarm.sizeClass)
+        Meta.shared.track(.bossWin)
+        if isBossRush {
+            Progress.shared.addDNA(rewardDNA); Progress.shared.discover(swarm.element, swarm.sizeClass)
+            RunBoost.bossRush = (RunBoost.bossRush ?? 0) + 1; Meta.shared.recordBossRush(RunBoost.bossRush!)
+        } else {
+            Progress.shared.clear(stage: stage.index, dna: rewardDNA, element: swarm.element, sizeClass: swarm.sizeClass)
+        }
     }
 
     private func lose() {
+        lostInBoss = phase == .boss
+        lostBossHP = lostInBoss ? bossHP : nil
+        if isBossRush, let n = RunBoost.bossRush { Meta.shared.recordBossRush(n) }
         phase = .lost; abilityReady = false
         AudioEngine.shared.stop(); AudioEngine.shared.play("gate_bad")
         Haptics.shared.rumble(0.4, intensity: 0.6)
+    }
+
+    /// 広告視聴で復活：ボス戦なら残りHPから仲間の力2倍で再戦、道中なら仲間10体で再開
+    func revive() {
+        guard phase == .lost, !revived else { return }
+        revived = true; Meta.shared.usedAdRevive()
+        AudioEngine.shared.startBGM(); AudioEngine.shared.setIntensity(2)
+        if lostInBoss {
+            bossMax *= max(0.05, bossHP); battleT = 0; revivePower = 2
+            phase = .boss; abilityReady = true
+            popup(String(localized: "復活！ 攻撃力2倍"), .yellow)
+        } else {
+            swarm.count = max(10, Meta.shared.startCount * 5); displayCount = swarm.count
+            rebuildUnits(animated: true); updateLabel()
+            phase = .running; last = CACurrentMediaTime()
+            popup(String(localized: "復活！"), .yellow)
+        }
+        Haptics.shared.tap(1)
     }
 
     private func popup(_ s: String, _ c: Color) {

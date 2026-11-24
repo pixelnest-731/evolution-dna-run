@@ -69,6 +69,9 @@ enum CreatureFactory {
         // オーナー提供イラストをそのまま使用
         let h = CGFloat(element == .none ? 1.2 : 1.35) * CGFloat([1, 1.5, 2.1, 2.8][min(sizeClass, 3)])
         let n = Sprite.node(Art.runner(element, sizeClass), height: h)
+        if Meta.shinyKeys.contains("\(element.rawValue)-\(sizeClass)") {   // 色違い（金色）
+            n.enumerateHierarchy { c, _ in c.geometry?.firstMaterial?.multiply.contents = UIColor(red: 1, green: 0.85, blue: 0.35, alpha: 1) }
+        }
         Sprite.hop(n)
         return n
     }

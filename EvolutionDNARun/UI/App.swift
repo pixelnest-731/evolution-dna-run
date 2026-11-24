@@ -22,13 +22,18 @@ struct RootView: View {
     @State private var screen: Screen = .home
     @State private var runID = 0   // 同じステージのリトライでもゲームを作り直す
     @ObservedObject var progress = Progress.shared
+    @ObservedObject var ads = AdService.shared
+    /// ボスラッシュ：現在の進行より少し先のステージを3つ飛ばしで連戦
+    static func rushStage(_ n: Int) -> Int { max(5, Progress.shared.data.currentStage) + 2 + n * 3 }
     var body: some View {
         ZStack {
             switch screen {
             case .home:
-                HomeView(onPlay: { let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = .game(d > 0 ? d : progress.data.currentStage) }, onCollection: { screen = .collection })
+                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = .game(d > 0 ? d : progress.data.currentStage) },
+                         onCollection: { screen = .collection },
+                         onBossRush: { RunBoost.bossRush = 0; runID += 1; screen = .game(RootView.rushStage(0)) })
             case .game(let s):
-                GameScreen(stageIndex: s, onExit: { next in runID += 1; screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
+                GameScreen(stageIndex: s, onExit: { next in runID += 1; if next == nil { RunBoost.bossRush = nil }; screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
             case .collection:
                 CollectionView(onClose: { screen = .home })
             }
@@ -106,8 +111,12 @@ struct Thumb: View {
 struct HomeView: View {
     var onPlay: () -> Void
     var onCollection: () -> Void
+    var onBossRush: () -> Void
     @ObservedObject var progress = Progress.shared
+    @ObservedObject var meta = Meta.shared
     @State private var showSettings = false
+    @State private var sheet: HomeSheet?
+    enum HomeSheet: String, Identifiable { case login, daily, chest, upgrade; var id: String { rawValue } }
     @State private var pulse = false
     var body: some View {
         ZStack {
@@ -135,6 +144,12 @@ struct HomeView: View {
                 }
                 .shadow(color: DS.navy, radius: 0, x: 0, y: 4).shadow(color: DS.navy, radius: 0, x: 2, y: 0).shadow(color: DS.navy, radius: 0, x: -2, y: 0)
                 .padding(.top, 8)
+                HStack(spacing: 10) {
+                    MetaButton(icon: "calendar", title: "ログボ", color: .pink, badge: meta.loginAvailable ? 1 : 0) { sheet = .login }
+                    MetaButton(icon: "checklist", title: "ミッション", color: .orange, badge: meta.unclaimedMissions) { sheet = .daily }
+                    MetaButton(icon: "gift.fill", title: "宝箱", color: .purple, badge: meta.freeChestReady ? 1 : 0) { sheet = .chest }
+                    MetaButton(icon: "arrow.up.circle.fill", title: "強化", color: .green, badge: 0) { sheet = .upgrade }
+                }.padding(.top, 10)
                 Spacer()
                 Button(action: { AudioEngine.shared.play("tap"); onPlay() }) {
                     HStack(spacing: 12) {
@@ -156,10 +171,29 @@ struct HomeView: View {
                     }.foregroundStyle(.white).frame(width: 150, height: 64)
                 }
                 .buttonStyle(GameButtonStyle(top: Color(red: 1, green: 0.85, blue: 0.3), bottom: Color(red: 0.95, green: 0.6, blue: 0.1), radius: 32))
-                .padding(.top, 18).padding(.bottom, 36)
+                .padding(.top, 14)
+                Button(action: { AudioEngine.shared.play("tap"); onBossRush() }) {
+                    HStack(spacing: 6) { Image(systemName: "flame.fill"); Text("ボスラッシュ"); Text("最高 \(meta.d.bossRushBest) 連勝").font(DS.font(12, .bold)).opacity(0.85) }
+                        .font(DS.font(17, .black)).foregroundStyle(.white).padding(.horizontal, 18).frame(height: 46)
+                        .background(LinearGradient(colors: [Color(red: 0.95, green: 0.3, blue: 0.3), Color(red: 0.6, green: 0.1, blue: 0.3)], startPoint: .top, endPoint: .bottom), in: Capsule())
+                        .overlay(Capsule().stroke(DS.gold, lineWidth: 2))
+                }
+                .opacity(progress.data.currentStage >= 4 ? 1 : 0.4).disabled(progress.data.currentStage < 4)
+                .padding(.top, 10).padding(.bottom, 26)
             }
         }
-        .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse = true } }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse = true }
+            if meta.loginAvailable && progress.data.currentStage > 1 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { sheet = .login } }
+        }
+        .sheet(item: $sheet) { s in
+            switch s {
+            case .login: LoginBonusView().presentationDetents([.medium, .large])
+            case .daily: DailyView()
+            case .chest: ChestView()
+            case .upgrade: UpgradeView()
+            }
+        }
         .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.large]) }
     }
 }
@@ -446,6 +480,14 @@ struct EvolutionPanel: View {
 struct ResultCard: View {
     @ObservedObject var game: GameController
     var onExit: (Int?) -> Void
+    @State private var tripled = false
+    private func next(_ won: Bool) {
+        if let n = RunBoost.bossRush { if won { onExit(RootView.rushStage(n)) } else { onExit(nil) }; return }
+        let target = won ? game.stage.index + 1 : game.stage.index
+        if won && Meta.shared.shouldShowInterstitial(stage: game.stage.index) {
+            AdService.shared.showInterstitial("ステージ間") { onExit(target) }
+        } else { onExit(target) }
+    }
     var body: some View {
         let won = game.phase == .won
         VStack(spacing: 14) {
@@ -457,14 +499,36 @@ struct ResultCard: View {
                         .shadow(color: Color(red: 0.4, green: 0.15, blue: 0.05), radius: 0, x: 0, y: 4)
                 }
                 HStack(spacing: 6) { ForEach(0..<3) { _ in Image(systemName: "star.fill").font(.system(size: 40)).foregroundStyle(DS.gold).shadow(color: .orange, radius: 6) } }
-                HStack { Text("💎"); Text("+\(20 + game.stage.index * 5 + game.dnaCollected)").font(DS.font(26)).foregroundStyle(.white) }
+                if let n = RunBoost.bossRush { Text("🔥 \(n) 連勝！").font(DS.font(22, .black)).foregroundStyle(.orange) }
+                HStack { Text("💎"); Text("+\(game.rewardDNA * (tripled ? 3 : 1))").font(DS.font(26)).foregroundStyle(.white) }
+                if !tripled {
+                    AdButton(title: "広告を見て報酬3倍！") {
+                        AdService.shared.showRewarded("クリア報酬3倍") { ok in if ok { Progress.shared.addDNA(game.rewardDNA * 2); tripled = true; AudioEngine.shared.play("win") } }
+                    }
+                }
                 if game.element != .none { Thumb(e: game.element, k: game.sizeClass, size: 100) }
             } else {
                 Text("GAME OVER").font(DS.font(38, .black)).foregroundStyle(.white)
+                if let hp = game.lostBossHP {
+                    // ニアミス演出：あと少しだったことを強調
+                    Text(hp < 0.3 ? "おしい！ あと \(max(1, Int(hp * 100)))% で倒せた！" : "ボスの残りHP \(Int(hp * 100))%").font(DS.font(20, .black))
+                        .foregroundStyle(hp < 0.3 ? .yellow : .white)
+                    ProgressView(value: 1 - hp).tint(.red).frame(width: 220)
+                }
+                if !game.revived && Meta.shared.canAdRevive {
+                    AdButton(title: game.lostBossHP != nil ? "広告で復活！攻撃力2倍" : "広告でその場から復活") {
+                        AdService.shared.showRewarded("復活") { ok in if ok { game.revive() } }
+                    }
+                }
+                if RunBoost.bossRush == nil {
+                    AdButton(title: "広告で仲間3倍スタート") {
+                        AdService.shared.showRewarded("リトライ仲間3倍") { ok in if ok { RunBoost.startMultiplier = 3; onExit(game.stage.index) } }
+                    }
+                } else { Text("ボスラッシュ記録: \(RunBoost.bossRush ?? 0) 連勝").font(DS.font(16, .bold)).foregroundStyle(.orange) }
                 Text(String(localized: "ボスの弱点属性で進化するか、\n融合で強い個体を作ろう")).font(DS.font(16, .bold)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
             }
-            Button { onExit(won ? game.stage.index + 1 : game.stage.index) } label: {
-                Text(won ? "NEXT" : "RETRY").font(DS.font(28, .black)).foregroundStyle(.white).frame(width: 210, height: 66)
+            Button { next(won) } label: {
+                Text(won ? "NEXT" : (RunBoost.bossRush != nil ? "終了" : "RETRY")).font(DS.font(28, .black)).foregroundStyle(.white).frame(width: 210, height: 66)
             }.buttonStyle(GameButtonStyle(top: Color(red: 0.55, green: 0.98, blue: 0.3), bottom: Color(red: 0.15, green: 0.72, blue: 0.15), radius: 33))
             Button("ホーム") { onExit(nil) }.font(DS.font(16, .bold)).foregroundStyle(.white.opacity(0.85))
         }
