@@ -27,7 +27,7 @@ final class AudioEngine {
         engine.attach(sfxMix); engine.attach(bgmMix)
         engine.connect(sfxMix, to: engine.mainMixerNode, format: nil)
         engine.connect(bgmMix, to: engine.mainMixerNode, format: nil)
-        let names = ["gate_mul", "gate_big", "gate_bad", "evolve", "fuse", "hit", "obstacle", "boss_roar", "boss_down", "win", "tap",
+        let names = ["gate_mul", "gate_big", "gate_bad", "evolve", "fuse", "hit", "obstacle", "boss_roar", "boss_down", "win", "tap", "boss_hit", "boss_stagger", "shatter", "boss_fall",
                      "bgm_micro_base", "bgm_micro_arp", "bgm_micro_drums"]
             + (0..<8).flatMap { i in ["a", "b", "c"].map { "pop_\($0)_\(i)" } }
         for n in names {

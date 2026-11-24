@@ -359,7 +359,7 @@ struct GameScreen: View {
         }
         .contentShape(Rectangle())
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in game.drag(dx: v.translation.width, width: UIScreen.main.bounds.width) }.onEnded { _ in game.endDrag() })
-        .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(game.phase == .won ? 1.0 : 0.3), value: game.phase)
+        .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(game.phase == .won ? 2.3 : 0.3), value: game.phase)
         .onDisappear { game.stop() }
     }
 }

@@ -38,6 +38,18 @@ enum BossFactory {
     static func build(_ kind: BossKind) -> SCNNode {
         let n = Sprite.node(Art.boss(kind), height: kind == .moth || kind == .whale ? 5.5 : 7.5)
         n.name = "boss"
+        if let p = n.childNodes.first, let g = p.geometry?.copy() as? SCNGeometry {
+            // ボス専用マテリアル（被弾時の赤色化用）と、白く光らせる加算オーバーレイ
+            g.materials = g.materials.map { $0.copy() as! SCNMaterial }
+            p.geometry = g; p.name = "plane"
+            if let fg = g.copy() as? SCNGeometry {
+                let fm = g.firstMaterial!.copy() as! SCNMaterial; fm.blendMode = .add; fm.writesToDepthBuffer = false
+                fm.multiply.contents = UIColor(white: 1, alpha: 1)
+                fg.materials = [fm]
+                let flash = SCNNode(geometry: fg); flash.name = "flash"; flash.opacity = 0; flash.position.z = 0.02
+                p.addChildNode(flash)
+            }
+        }
         if let p = n.childNodes.first {
             let b = SCNAction.sequence([.scale(to: 1.04, duration: 1.1), .scale(to: 0.98, duration: 1.1)]); b.timingMode = .easeInEaseOut
             p.runAction(.repeatForever(b))

@@ -112,3 +112,15 @@ save("bgm_micro_base", base, peak=.5)
 save("bgm_micro_arp", delay(layer(arp), t=beat * .75)[:L], peak=.45)
 save("bgm_micro_drums", layer(drums), peak=.45)
 print("done")
+
+# ---- ボス撃破演出用（追加）----
+# 被弾：低音の肉厚な打撃＋高域のパチッ
+save("boss_hit", mix((tone(N(40), .08, d=.12, s=0, r=.1, glide=-.6, harm=(1, .7, .4)), 0), (noise(.04, r=.06, amp=.7, lp=.6), 0), (tone(N(76), .03, d=.05, s=0, r=.05, fm=2, amp=.3), 0)))
+# よろめき：うめくような下降FM＋揺れ
+save("boss_stagger", reverb(mix((tone(N(38), .9, a=.05, d=.4, s=.5, r=.3, glide=-.3, fm=2.5, ratio=.5, harm=(1, .6, .4, .3)), 0), (noise(.9, a=.1, r=.3, amp=.25, lp=.06), 0))))
+# クリスタル粉砕：高音の金属的な粒の連打＋ノイズ
+sh = [(tone(N(m), .05, d=.15, s=0, r=.25, fm=3.5, ratio=3.7, amp=.5), int(SR * t)) for m, t in [(96, 0), (101, .03), (93, .06), (103, .1), (98, .14), (105, .19), (91, .24)]]
+save("shatter", reverb(mix((noise(.25, r=.3, amp=.8, lp=.9), 0), (tone(N(36), .2, d=.3, s=0, r=.3, harm=(1, .8, .5)), 0), *sh), wet=.45))
+# 倒れる：重い着地＋地鳴り
+save("boss_fall", reverb(mix((tone(N(28), .6, d=.5, s=.1, r=.6, glide=-.4, harm=(1, .9, .6, .4, .2)), 0), (noise(.8, a=.01, r=.8, amp=.6, lp=.05), 0), (noise(.1, r=.1, amp=.5, lp=.5), 0)), wet=.4))
+print("boss sfx done")

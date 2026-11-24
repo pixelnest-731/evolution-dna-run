@@ -380,9 +380,9 @@ final class GameController: NSObject, ObservableObject {
             shot.runAction(.sequence([.move(to: SCNVector3(bp.x + Float.random(in: -1...1), bp.y + 2.5, bp.z + 2), duration: 0.3), .removeFromParentNode()]))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, self.phase == .boss else { return }
-                AudioEngine.shared.play("hit", volume: 0.6); Haptics.shared.tap(0.4, sharp: 0.8)
-                self.scene.addParticleSystem(FX.burst(color: .white, count: 30, speed: 4, size: 0.15), transform: SCNMatrix4MakeTranslation(bp.x, bp.y + 2.5, bp.z + 2))
-                boss.runAction(.sequence([.scale(to: 0.94, duration: 0.05), .scale(to: 1, duration: 0.1)]))
+                AudioEngine.shared.play("boss_hit", volume: 0.7); Haptics.shared.tap(0.5, sharp: 0.8)
+                self.scene.addParticleSystem(FX.burst(color: .white, count: 40, speed: 5, size: 0.2), transform: SCNMatrix4MakeTranslation(bp.x + Float.random(in: -1.2...1.2), bp.y + Float.random(in: 2...4), bp.z + 2))
+                self.bossHitReaction(boss)
             }
         }
         if bossHP <= 0 { win() }
@@ -391,18 +391,68 @@ final class GameController: NSObject, ObservableObject {
         }
     }
 
+    /// 被弾リアクション：赤く光る＋のけぞり＋ぶれ
+    private func bossHitReaction(_ boss: SCNNode) {
+        guard let plane = boss.childNode(withName: "plane", recursively: true) else { return }
+        let m = plane.geometry?.firstMaterial
+        SCNTransaction.begin(); SCNTransaction.animationDuration = 0
+        m?.multiply.contents = UIColor(red: 1, green: 0.45, blue: 0.45, alpha: 1)
+        SCNTransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) { m?.multiply.contents = UIColor.white }
+        let tilt = CGFloat.random(in: -0.08...0.08)
+        plane.runAction(.sequence([.group([.moveBy(x: 0, y: 0, z: -0.35, duration: 0.05), .rotateBy(x: 0, y: 0, z: tilt, duration: 0.05)]),
+                                   .group([.moveBy(x: 0, y: 0, z: 0.35, duration: 0.12), .rotateBy(x: 0, y: 0, z: -tilt, duration: 0.12)])]))
+    }
+
+    /// 撃破演出：よろめき（点滅・震え）→ クリスタル粉砕の大爆発 → 後ろへ倒れ込む → 地鳴り → ファンファーレ
     private func win() {
         phase = .won; abilityReady = false
         AudioEngine.shared.stop()
-        // 一瞬の静寂 → インパクト → スローモーション → ファンファーレ
-        scene.physicsWorld.speed = 0.3
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            guard let self, let boss = self.bossNode else { return }
-            AudioEngine.shared.play("boss_down"); Haptics.shared.rumble(0.6, intensity: 1); self.shake = 0.8
-            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.6, blue: 0.8, alpha: 1), count: 900, speed: 16, size: 0.5), transform: SCNMatrix4MakeTranslation(boss.position.x, boss.position.y + 2.5, boss.position.z))
-            boss.runAction(.sequence([.group([.scale(to: 1.6, duration: 0.5), .fadeOut(duration: 0.5)]), .removeFromParentNode()]))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { AudioEngine.shared.play("win") }
+        guard let boss = bossNode, let plane = boss.childNode(withName: "plane", recursively: true) else { return }
+        let flash = plane.childNode(withName: "flash", recursively: false)
+        let center = SCNVector3(boss.position.x, boss.position.y + 3, boss.position.z + 1)
+        plane.removeAllActions()
+        // ① よろめき 0〜0.8秒
+        AudioEngine.shared.play("boss_stagger"); Haptics.shared.rumble(0.8, intensity: 0.6)
+        var jitter: [SCNAction] = []
+        for i in 0..<10 { let d: CGFloat = i % 2 == 0 ? 0.28 : -0.28; jitter.append(.moveBy(x: d, y: 0, z: 0, duration: 0.04)); jitter.append(.moveBy(x: -d, y: 0, z: 0, duration: 0.04)) }
+        plane.runAction(.sequence(jitter))
+        flash?.runAction(.repeat(.sequence([.fadeOpacity(to: 0.9, duration: 0.05), .fadeOpacity(to: 0, duration: 0.07)]), count: 6))
+        for k in 0..<4 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(k) * 0.18) { [weak self] in
+                guard let self else { return }
+                AudioEngine.shared.play("boss_hit", volume: 0.8)
+                self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.85, blue: 1, alpha: 1), count: 60, speed: 6, size: 0.3), transform: SCNMatrix4MakeTranslation(center.x + Float.random(in: -1.5...1.5), center.y + Float.random(in: -1...1.5), center.z))
+            }
         }
+        // ② 粉砕 0.8秒
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self else { return }
+            AudioEngine.shared.play("shatter"); Haptics.shared.tap(1, sharp: 1); self.shake = 0.9
+            flash?.runAction(.sequence([.fadeOpacity(to: 1, duration: 0.04), .fadeOpacity(to: 0, duration: 0.5)]))
+            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 0.8, green: 0.4, blue: 1, alpha: 1), count: 700, speed: 15, size: 0.45), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.5, blue: 0.9, alpha: 1), count: 400, speed: 10, size: 0.7), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            self.scene.addParticleSystem(FX.burst(color: .white, count: 200, speed: 20, size: 0.25), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            let light = SCNNode(); light.light = SCNLight(); light.light!.type = .omni; light.light!.color = UIColor(red: 0.9, green: 0.5, blue: 1, alpha: 1)
+            light.position = center; self.scene.rootNode.addChildNode(light)
+            light.runAction(.sequence([.customAction(duration: 0.8) { n, t in n.light?.intensity = 4000 * (1 - t / 0.8) }, .removeFromParentNode()]))
+            // ③ 後ろへ倒れ込みながら沈む
+            plane.runAction(.sequence([.group([.rotateBy(x: -1.3, y: 0, z: 0.25, duration: 0.9), .moveBy(x: 0, y: -1.5, z: -1.5, duration: 0.9)]), .fadeOut(duration: 0.3)]))
+        }
+        // ④ 地鳴り 1.6秒
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+            guard let self else { return }
+            AudioEngine.shared.play("boss_fall"); Haptics.shared.rumble(0.5, intensity: 1); self.shake = 0.7
+            let dust = SCNParticleSystem(); dust.particleImage = FX.softDot; dust.birthRate = 900; dust.emissionDuration = 0.12; dust.loops = false
+            dust.particleLifeSpan = 1.2; dust.particleVelocity = 6; dust.spreadingAngle = 80; dust.emittingDirection = SCNVector3(0, 0.3, 0)
+            dust.particleSize = 0.7; dust.particleSizeVariation = 0.3; dust.particleColor = UIColor(red: 0.95, green: 0.9, blue: 1, alpha: 0.35); dust.dampingFactor = 3
+            dust.propertyControllers = [.opacity: SCNParticlePropertyController(animation: { let a = CAKeyframeAnimation(); a.values = [0.8, 0.4, 0]; return a }())]
+            dust.emitterShape = SCNTorus(ringRadius: 2.5, pipeRadius: 0.2)
+            self.scene.addParticleSystem(dust, transform: SCNMatrix4MakeTranslation(boss.position.x, 0.3, boss.position.z))
+            boss.runAction(.sequence([.wait(duration: 0.5), .removeFromParentNode()]))
+        }
+        // ⑤ ファンファーレ 2.1秒
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { AudioEngine.shared.play("win") }
         Progress.shared.clear(stage: stage.index, dna: 20 + stage.index * 5 + dnaCollected, element: swarm.element, sizeClass: swarm.sizeClass)
     }
 
