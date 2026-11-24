@@ -336,7 +336,22 @@ final class GameController: NSObject, ObservableObject {
         countLabel.childNode(withName: "bg", recursively: false)?.position = SCNVector3((mx.x + mn.x) / 2, mn.y + 0.42, -0.06)
     }
 
+    private var winT: Float = 0
     private func updateCamera(dt: Float) {
+        // 撃破時：ボスへ寄りながら横へ回り込む（映画的なカメラワーク）
+        if phase == .won, let boss = bossNode {
+            winT += dt
+            let t = min(winT / 2.2, 1)
+            let ease = t * t * (3 - 2 * t)
+            var sx: Float = 0, sy: Float = 0
+            if shake > 0 { shake = max(0, shake - dt); sx = Float.random(in: -1...1) * shake * 0.7; sy = Float.random(in: -1...1) * shake * 0.7 }
+            let bp = boss.position
+            let target = SCNVector3(bp.x + sin(ease * 0.9) * 7 + sx, 4.2 - ease * 1.2 + sy, bp.z + 15 - ease * 5)
+            let p = camera.position; let k = min(1, dt * 3)
+            camera.position = SCNVector3(p.x + (target.x - p.x) * k, p.y + (target.y - p.y) * k, p.z + (target.z - p.z) * k)
+            camera.look(at: SCNVector3(bp.x, 2.8, bp.z))
+            return
+        }
         let back: Float = phase == .boss || phase == .won ? 13 : 9.5 + spread * 0.8
         let up: Float = phase == .boss || phase == .won ? 6 : 6.5 + spread * 0.5
         var sx: Float = 0, sy: Float = 0
@@ -429,23 +444,24 @@ final class GameController: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             guard let self else { return }
             AudioEngine.shared.play("shatter"); Haptics.shared.tap(1, sharp: 1); self.shake = 0.9
-            flash?.runAction(.sequence([.fadeOpacity(to: 1, duration: 0.04), .fadeOpacity(to: 0, duration: 0.5)]))
-            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 0.8, green: 0.4, blue: 1, alpha: 1), count: 700, speed: 15, size: 0.45), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
-            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.5, blue: 0.9, alpha: 1), count: 400, speed: 10, size: 0.7), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
-            self.scene.addParticleSystem(FX.burst(color: .white, count: 200, speed: 20, size: 0.25), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            flash?.runAction(.sequence([.fadeOpacity(to: 0.7, duration: 0.04), .fadeOpacity(to: 0, duration: 0.2)]))
+            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 0.8, green: 0.4, blue: 1, alpha: 1), count: 260, speed: 14, size: 0.3), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.5, blue: 0.9, alpha: 1), count: 120, speed: 9, size: 0.4), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
+            self.scene.addParticleSystem(FX.burst(color: .white, count: 80, speed: 18, size: 0.18), transform: SCNMatrix4MakeTranslation(center.x, center.y, center.z))
             let light = SCNNode(); light.light = SCNLight(); light.light!.type = .omni; light.light!.color = UIColor(red: 0.9, green: 0.5, blue: 1, alpha: 1)
             light.position = center; self.scene.rootNode.addChildNode(light)
-            light.runAction(.sequence([.customAction(duration: 0.8) { n, t in n.light?.intensity = 4000 * (1 - t / 0.8) }, .removeFromParentNode()]))
-            // ③ 後ろへ倒れ込みながら沈む
-            plane.runAction(.sequence([.group([.rotateBy(x: -1.3, y: 0, z: 0.25, duration: 0.9), .moveBy(x: 0, y: -1.5, z: -1.5, duration: 0.9)]), .fadeOut(duration: 0.3)]))
+            light.runAction(.sequence([.customAction(duration: 0.8) { n, t in n.light?.intensity = 1200 * (1 - t / 0.8) }, .removeFromParentNode()]))
+            // ③ ボスの絵を厚みのある立体の破片に砕き、回転しながら奥行き方向へ飛び散らせる
+            Shatter.explode(plane, in: self.scene, toward: self.camera.presentation.worldPosition)
+            boss.childNodes.forEach { $0.opacity = 0 }
         }
         // ④ 地鳴り 1.6秒
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
             guard let self else { return }
             AudioEngine.shared.play("boss_fall"); Haptics.shared.rumble(0.5, intensity: 1); self.shake = 0.7
-            let dust = SCNParticleSystem(); dust.particleImage = FX.softDot; dust.birthRate = 900; dust.emissionDuration = 0.12; dust.loops = false
+            let dust = SCNParticleSystem(); dust.particleImage = FX.softDot; dust.birthRate = 450; dust.emissionDuration = 0.12; dust.loops = false
             dust.particleLifeSpan = 1.2; dust.particleVelocity = 6; dust.spreadingAngle = 80; dust.emittingDirection = SCNVector3(0, 0.3, 0)
-            dust.particleSize = 0.7; dust.particleSizeVariation = 0.3; dust.particleColor = UIColor(red: 0.95, green: 0.9, blue: 1, alpha: 0.35); dust.dampingFactor = 3
+            dust.particleSize = 0.7; dust.particleSizeVariation = 0.3; dust.particleColor = UIColor(red: 0.95, green: 0.9, blue: 1, alpha: 0.2); dust.dampingFactor = 3
             dust.propertyControllers = [.opacity: SCNParticlePropertyController(animation: { let a = CAKeyframeAnimation(); a.values = [0.8, 0.4, 0]; return a }())]
             dust.emitterShape = SCNTorus(ringRadius: 2.5, pipeRadius: 0.2)
             self.scene.addParticleSystem(dust, transform: SCNMatrix4MakeTranslation(boss.position.x, 0.3, boss.position.z))

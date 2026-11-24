@@ -49,6 +49,15 @@ enum BossFactory {
                 let flash = SCNNode(geometry: fg); flash.name = "flash"; flash.opacity = 0; flash.position.z = 0.02
                 p.addChildNode(flash)
             }
+            // 厚み：暗くした同じ絵を後ろに重ね、斜めから見たときに立体の塊に見せる
+            for i in 1...5 {
+                let lg = g.copy() as! SCNGeometry
+                let lm = g.firstMaterial!.copy() as! SCNMaterial
+                lm.multiply.contents = UIColor(white: 0.55 - CGFloat(i) * 0.05, alpha: 1)
+                lg.materials = [lm]
+                let layer = SCNNode(geometry: lg); layer.position.z = -0.07 * Float(i); layer.name = "layer"
+                p.addChildNode(layer)
+            }
         }
         if let p = n.childNodes.first {
             let b = SCNAction.sequence([.scale(to: 1.04, duration: 1.1), .scale(to: 0.98, duration: 1.1)]); b.timingMode = .easeInEaseOut
