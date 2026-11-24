@@ -70,6 +70,8 @@ final class GameController: NSObject, ObservableObject {
         cam.colorFringeStrength = 0; cam.saturation = 1.2; cam.contrast = 0.1
         camera.camera = cam
         scene.rootNode.addChildNode(camera); view.pointOfView = camera
+        let bd = WorldJungle.backdrop(stage.index <= 10 ? "bg_paradise" : "bg_world_cells", aspectHint: 2.8)
+        bd.position = SCNVector3(0, 9.6, -24); bd.scale = SCNVector3(1.12, 1.12, 1); camera.addChildNode(bd)
         let motes = SCNNode(); motes.position = SCNVector3(0, 0, -15); motes.addParticleSystem(WorldBuilder.motes()); camera.addChildNode(motes)
         // 走行時の土煙
         let dust = SCNParticleSystem(); dust.particleImage = FX.softDot; dust.birthRate = 18; dust.particleLifeSpan = 0.7
@@ -198,7 +200,7 @@ final class GameController: NSObject, ObservableObject {
     }
 
     private var spread: Float { Float(sqrt(Double(min(swarm.count, maxVisible)))) * 0.28 * unitScale }
-    private var unitScale: Float { swarm.element == .none ? [1, 1.9, 2.8, 3.8][min(swarm.sizeClass, 3)] : [1.05, 1.45, 2.0, 2.7][min(swarm.sizeClass, 3)] }
+    private var unitScale: Float { swarm.element == .none ? [1, 1.5, 2.1, 2.8][min(swarm.sizeClass, 3)] : [1.1, 1.5, 2.1, 2.8][min(swarm.sizeClass, 3)] }
 
     private func passGate(_ g: GateKind, node: SCNNode, other: SCNNode) {
         let old = swarm.count; let oldClass = swarm.sizeClass; let oldEl = swarm.element
@@ -292,7 +294,7 @@ final class GameController: NSObject, ObservableObject {
     // MARK: - 群体描画（最大 maxVisible 体。論理数とは独立）
     private var builtKey = ""
     private func rebuildUnits(animated: Bool, force: Bool = false) {
-        let cap = swarm.element == .none ? maxVisible : 45   // 動物形態はノード数が多いので描画上限を下げる
+        let cap = maxVisible   // 動物形態はノード数が多いので描画上限を下げる
         let visible = max(0, min(swarm.count, swarm.sizeClass >= 2 ? 12 : cap))
         let key = "\(swarm.element.rawValue)-\(swarm.sizeClass)"
         if force || key != builtKey { units.forEach { $0.removeFromParentNode() }; units.removeAll(); builtKey = key }

@@ -66,6 +66,13 @@ enum CreatureFactory {
 
     /// 同一形態はテンプレートを clone() → ジオメトリ共有で描画バッチ化
     static func unit(element: Element, sizeClass: Int) -> SCNNode {
+        // オーナー提供イラストをそのまま使用
+        let h = CGFloat(element == .none ? 1.2 : 1.35) * CGFloat([1, 1.5, 2.1, 2.8][min(sizeClass, 3)])
+        let n = Sprite.node(Art.runner(element, sizeClass), height: h)
+        Sprite.hop(n)
+        return n
+    }
+    static func unit3D(element: Element, sizeClass: Int) -> SCNNode {
         let key = "\(element.rawValue)-\(sizeClass)"
         if cache[key] == nil { cache[key] = build(element: element, sizeClass: sizeClass) }
         let n = cache[key]!.clone()

@@ -110,10 +110,17 @@ struct HomeView: View {
     @State private var pulse = false
     var body: some View {
         ZStack {
-            ShowcaseView().ignoresSafeArea()
+            // オーナー提供のホーム画面イラストをそのまま背景に使用
+            GeometryReader { g in
+                VStack(spacing: 0) {
+                    Image(uiImage: Art.image("bg_home")).resizable().scaledToFill()
+                        .frame(width: g.size.width, height: g.size.height * 0.72).clipped()
+                    LinearGradient(colors: [Color(red: 0.55, green: 0.5, blue: 0.75), Color(red: 0.3, green: 0.25, blue: 0.5)], startPoint: .top, endPoint: .bottom)
+                }
+            }.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
-                    Thumb(e: .fire, k: 0, size: 54)
+                    Thumb(e: .fire, k: 0, size: 54).scaleEffect(1.15)
                         .background(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.6), Color(red: 1, green: 0.6, blue: 0.35)], startPoint: .top, endPoint: .bottom), in: Circle())
                         .clipShape(Circle()).overlay(Circle().stroke(DS.gold, lineWidth: 4))
                     Spacer()

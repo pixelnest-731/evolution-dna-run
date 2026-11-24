@@ -225,6 +225,10 @@ enum Thumbnails {
 
     @MainActor
     static func image(_ e: Element, _ k: Int, size: CGFloat = 220) -> UIImage {
+        return Art.image(Art.creature(e, k))
+    }
+    @MainActor
+    static func render3D(_ e: Element, _ k: Int, size: CGFloat = 220) -> UIImage {
         let key = "\(e.rawValue)-\(k)-\(Int(size))"
         if let c = cache[key] { return c }
         let scene = SCNScene()

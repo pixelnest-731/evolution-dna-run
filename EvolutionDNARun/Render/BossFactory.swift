@@ -34,7 +34,18 @@ enum BossKind: Int, CaseIterable, Codable {
 }
 
 enum BossFactory {
+    /// オーナー提供イラスト（Bosses.png）をそのまま使用
     static func build(_ kind: BossKind) -> SCNNode {
+        let n = Sprite.node(Art.boss(kind), height: kind == .moth || kind == .whale ? 5.5 : 7.5)
+        n.name = "boss"
+        if let p = n.childNodes.first {
+            let b = SCNAction.sequence([.scale(to: 1.04, duration: 1.1), .scale(to: 0.98, duration: 1.1)]); b.timingMode = .easeInEaseOut
+            p.runAction(.repeatForever(b))
+            if kind == .moth || kind == .whale { p.position.y += 1.2; p.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.5, z: 0, duration: 1.3), .moveBy(x: 0, y: -0.5, z: 0, duration: 1.3)]))) }
+        }
+        return n
+    }
+    static func build3D(_ kind: BossKind) -> SCNNode {
         let n: SCNNode
         switch kind {
         case .gorilla: n = gorilla()

@@ -5,7 +5,7 @@ import UIKit
 /// 青空・雲・ターコイズの水面・滝のある浮島・ヤシ・岩・花・クリスタル・遠景のボス城
 enum WorldJungle {
     static func build(into scene: SCNScene, length: Float) {
-        scene.background.contents = FX.gradientImage(UIColor(red: 0.22, green: 0.55, blue: 0.98, alpha: 1), UIColor(red: 0.80, green: 0.93, blue: 1.0, alpha: 1))
+        scene.background.contents = FX.gradientImage(UIColor(red: 0.45, green: 0.76, blue: 1.0, alpha: 1), UIColor(red: 0.62, green: 0.86, blue: 1.0, alpha: 1))
         scene.fogColor = UIColor(red: 0.80, green: 0.92, blue: 1.0, alpha: 1)
         scene.fogStartDistance = 30; scene.fogEndDistance = 110
         let root = scene.rootNode
@@ -67,39 +67,19 @@ enum WorldJungle {
         let water = SCNNode(geometry: waterG); water.eulerAngles.x = -.pi / 2; water.position = SCNVector3(0, -0.45, cz - 40)
         root.addChildNode(water)
 
-        var rng = SplitMix64(seed: 2024)
-        // 近景：ヤシ・岩・花・クリスタル（道の両脇の小島）
-        var z: Float = 20
-        while z > length - 20 {
-            for s in [-1, 1] as [Float] {
-                let x = s * Float.random(in: hw + 2.2...hw + 7, using: &rng)
-                let isle = islet(&rng); isle.position = SCNVector3(x, -0.45, z + Float.random(in: -2...2, using: &rng))
-                root.addChildNode(isle)
-            }
-            z -= Float.random(in: 7...11, using: &rng)
-        }
-        // 中景・遠景：滝のある浮島・崖
-        z = 0
-        while z > length - 60 {
-            for s in [-1, 1] as [Float] {
-                let x = s * Float.random(in: 16...32, using: &rng)
-                let n = floatingIsland(&rng, big: Bool.random(using: &rng))
-                n.position = SCNVector3(x, Float.random(in: 2...9, using: &rng), z + Float.random(in: -6...6, using: &rng))
-                root.addChildNode(n)
-            }
-            z -= Float.random(in: 14...20, using: &rng)
-        }
-        // 最奥：ボスの城がある大きな島（ゴール目印）
-        let castle = floatingIsland(&rng, big: true); castle.scale = SCNVector3(2.4, 2.4, 2.4)
-        castle.position = SCNVector3(4, 6, length - 45)
-        let spire = SCNNode(geometry: SCNPyramid(width: 1.2, height: 4, length: 1.2)); spire.geometry!.materials = [Mat.jelly(UIColor(red: 0.85, green: 0.6, blue: 1, alpha: 1), alpha: 0.9)]
-        spire.position = SCNVector3(0, 2.2, 0); castle.addChildNode(spire)
-        root.addChildNode(castle)
-        // 雲
-        for i in 0..<10 {
-            let c = cloud(&rng); c.position = SCNVector3(Float(i % 2 == 0 ? -1 : 1) * Float.random(in: 10...45, using: &rng), Float.random(in: 14...24, using: &rng), Float(-i) * 25 + 20)
-            root.addChildNode(c)
-        }
+    }
+
+    /// 参考画像の遠景（浮島・滝・ボスの城）をそのまま貼る。カメラに固定し常に最背面に描画
+    static func backdrop(_ name: String, aspectHint: CGFloat) -> SCNNode {
+        let img = Art.image(name)
+        let aspect = img.size.height > 0 ? img.size.width / img.size.height : aspectHint
+        let w: CGFloat = 13.5
+        let g = SCNPlane(width: w, height: w / aspect)
+        let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = img
+        m.writesToDepthBuffer = false; m.readsFromDepthBuffer = false
+        g.materials = [m]
+        let n = SCNNode(geometry: g); n.renderingOrder = -100; n.name = "backdrop"
+        return n
     }
 
     static func palm(_ rng: inout SplitMix64) -> SCNNode {
