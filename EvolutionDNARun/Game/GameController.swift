@@ -46,7 +46,8 @@ final class GameController: NSObject, ObservableObject {
     private var playerPower: Double = 0
     private var abilityBonus = 1.0
     let speed: Float = 9.5
-    let maxVisible = 70
+    /// 画面に並べる最大体数（市販の増殖ランナー同様、数十体で頭打ち。実際の数は頭上の数字で表示）
+    private var visibleCap: Int { [30, 14, 7, 4][min(swarm.sizeClass, 3)] }
 
     init(stageIndex: Int) {
         stage = StageGenerator.stage(stageIndex)
@@ -199,7 +200,7 @@ final class GameController: NSObject, ObservableObject {
         if z <= stage.length + 8 { beginBoss() }
     }
 
-    private var spread: Float { Float(sqrt(Double(min(swarm.count, maxVisible)))) * 0.28 * unitScale }
+    private var spread: Float { Float(sqrt(Double(min(swarm.count, visibleCap)))) * 0.28 * unitScale }
     private var unitScale: Float { swarm.element == .none ? [1, 1.5, 2.1, 2.8][min(swarm.sizeClass, 3)] : [1.1, 1.5, 2.1, 2.8][min(swarm.sizeClass, 3)] }
 
     private func passGate(_ g: GateKind, node: SCNNode, other: SCNNode) {
@@ -294,8 +295,7 @@ final class GameController: NSObject, ObservableObject {
     // MARK: - 群体描画（最大 maxVisible 体。論理数とは独立）
     private var builtKey = ""
     private func rebuildUnits(animated: Bool, force: Bool = false) {
-        let cap = maxVisible   // 動物形態はノード数が多いので描画上限を下げる
-        let visible = max(0, min(swarm.count, swarm.sizeClass >= 2 ? 12 : cap))
+        let visible = max(0, min(swarm.count, visibleCap))
         let key = "\(swarm.element.rawValue)-\(swarm.sizeClass)"
         if force || key != builtKey { units.forEach { $0.removeFromParentNode() }; units.removeAll(); builtKey = key }
         while units.count > visible { units.removeLast().runAction(.sequence([.scale(to: 0, duration: 0.15), .removeFromParentNode()])) }
@@ -321,7 +321,7 @@ final class GameController: NSObject, ObservableObject {
 
     private func updateLabel() {
         let t = SCNText(string: "\(displayCount)", extrusionDepth: 0.1)
-        t.font = UIFont.systemFont(ofSize: 0.8, weight: .heavy).rounded(); t.flatness = 0.05
+        t.font = UIFont.systemFont(ofSize: 1.1, weight: .heavy).rounded(); t.flatness = 0.05
         let m = Mat.glow(.white); t.materials = [m]
         countLabel.geometry = t
         let (mn, mx) = countLabel.boundingBox
