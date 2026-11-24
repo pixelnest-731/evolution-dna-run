@@ -20,6 +20,7 @@ enum DS {
 struct RootView: View {
     enum Screen: Equatable { case home, game(Int), collection }
     @State private var screen: Screen = .home
+    @State private var runID = 0   // 同じステージのリトライでもゲームを作り直す
     @ObservedObject var progress = Progress.shared
     var body: some View {
         ZStack {
@@ -27,7 +28,7 @@ struct RootView: View {
             case .home:
                 HomeView(onPlay: { let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = .game(d > 0 ? d : progress.data.currentStage) }, onCollection: { screen = .collection })
             case .game(let s):
-                GameScreen(stageIndex: s, onExit: { next in screen = next.map { .game($0) } ?? .home }).id(s)
+                GameScreen(stageIndex: s, onExit: { next in runID += 1; screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
             case .collection:
                 CollectionView(onClose: { screen = .home })
             }
