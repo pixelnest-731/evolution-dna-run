@@ -122,54 +122,58 @@ enum StageGenerator {
     static func stage(_ index: Int) -> StageDef {
         if index == 1 { return tutorial }
         var rng = SplitMix64(seed: UInt64(index) &* 0x5DEECE66D &+ 11)
-        let rowCount = min(4 + index / 4, 8)
+        // 難易度カーブ: 0(序盤)→1(ステージ40以降)
+        let t = min(1.0, Double(index - 2) / 38.0)
+        let rowCount = min(3 + index / 5, 8)
         var rows: [GateRow] = []
         var z: Float = -16
         let evoSlot = Int.random(in: 1..<max(2, rowCount - 1), using: &rng)
-        let bossKind = BossKind.allCases[(index / 2) % BossKind.allCases.count]
+        // 序盤5ステージは弱点が分かりやすいゴリラ、その後ボスの種類が増える
+        let bossKind = index <= 5 ? BossKind.gorilla : BossKind.allCases[(index / 2) % BossKind.allCases.count]
         let weak = bossKind.weakness
         for r in 0..<rowCount {
             var a: GateKind, b: GateKind
             if r == evoSlot {
                 let others = [Element.fire, .ice, .thunder].filter { $0 != weak }
                 a = .evolve(weak); b = .evolve(others.randomElement(using: &rng)!)
-            } else if r == rowCount - 1 && index >= 3 {
+            } else if r == rowCount - 1 && index >= 8 {
                 a = .fuse; b = .add(Int.random(in: 3...8, using: &rng) * 10)
             } else {
                 let good: [GateKind] = [.add(10), .add(20), .add(50), .mul(2), .mul(3), .mul(5)]
                 let bad: [GateKind] = [.sub(10), .sub(20), .div(2)]
                 a = good.randomElement(using: &rng)!
-                b = Int.random(in: 0..<10, using: &rng) < 3 ? bad.randomElement(using: &rng)! : good.randomElement(using: &rng)!
+                b = Double.random(in: 0..<1, using: &rng) < (index <= 3 ? 0 : 0.1 + 0.25 * t) ? bad.randomElement(using: &rng)! : good.randomElement(using: &rng)!
             }
             if Bool.random(using: &rng) { swap(&a, &b) }
             rows.append(GateRow(z: z, left: a, right: b))
             z -= Float.random(in: 13...17, using: &rng)
         }
         var obstacles: [ObstacleDef] = []
-        for i in 0..<(rows.count - 1) where i % 2 == 1 || index > 6 {
+        for i in 0..<(rows.count - 1) where index >= 4 && (i % 2 == 1 || index > 12) {
             let mid = (rows[i].z + rows[i + 1].z) / 2
             obstacles.append(ObstacleDef(z: mid, x: Float.random(in: -1.5...1.5, using: &rng),
-                                         sweep: index > 4 ? 1.6 : 0, kills: 5 + index))
+                                         sweep: index > 10 ? 1.6 : 0, kills: 3 + index / 2))
         }
         let length = z - 10
         var stage = StageDef(index: index, seed: rng.state, length: length, rows: rows, obstacles: obstacles,
                              boss: BossDef(name: bossKind.name, hp: 1, weakness: weak, resist: bossKind.resist, kind: bossKind.rawValue))
-        // 最適解の 55〜70% を HP に設定：クリア可能だが、大きい数字を選ぶだけでは届かない
+        // 序盤は最適解の約2割（ほぼどのルートでも勝てる）→ 後半は55〜70%
         let best = Solver.bestPower(stage)
-        stage.boss.hp = max(8, (best * Double.random(in: 0.55...0.7, using: &rng)).rounded())
+        let ratio = 0.2 + 0.45 * t + Double.random(in: 0...0.05, using: &rng) * t
+        stage.boss.hp = max(8, (best * ratio).rounded())
         return stage
     }
 
     static let tutorial: StageDef = {
         var s = StageDef(index: 1, seed: 1, length: -92, rows: [
             GateRow(z: -14, left: .add(10), right: .mul(2)),
-            GateRow(z: -28, left: .mul(3), right: .sub(5)),
-            GateRow(z: -44, left: .evolve(.fire), right: .evolve(.ice)),
-            GateRow(z: -60, left: .add(20), right: .mul(5)),
-            GateRow(z: -76, left: .mul(2), right: .add(30)),
-        ], obstacles: [ObstacleDef(z: -52, x: 1.2, sweep: 0, kills: 6)],
+            GateRow(z: -30, left: .evolve(.fire), right: .evolve(.fire)),
+            GateRow(z: -48, left: .mul(2), right: .add(20)),
+            GateRow(z: -66, left: .mul(3), right: .add(30)),
+        ], obstacles: [],
            boss: BossDef(name: BossKind.gorilla.name, hp: 1, weakness: .fire, resist: .ice, kind: 0))
-        s.boss.hp = (Solver.bestPower(s) * 0.4).rounded()
+        // チュートリアル: 一番弱いルートでも必ず勝てるHP
+        s.boss.hp = max(5, (Solver.worstPower(s) * 0.7).rounded())
         return s
     }()
 }
@@ -191,6 +195,15 @@ enum Solver {
             best = max(best, sw.power(against: s.boss))
         }
         return best
+    }
+    static func worstPower(_ s: StageDef) -> Double {
+        var worst = Double.infinity
+        for mask in 0..<(1 << s.rows.count) {
+            var sw = Swarm()
+            for (i, r) in s.rows.enumerated() { sw.apply((mask >> i) & 1 == 0 ? r.left : r.right) }
+            worst = min(worst, sw.power(against: s.boss))
+        }
+        return worst
     }
     static func isClearable(_ s: StageDef) -> Bool { bestPower(s) >= s.boss.hp }
 }

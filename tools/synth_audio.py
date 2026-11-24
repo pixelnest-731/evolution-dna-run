@@ -83,33 +83,58 @@ fan = [(72, 0), (76, .12), (79, .24), (84, .36), (79, .6), (84, .72), (88, .84)]
 save("win", reverb(delay(mix(*[(tone(N(m), .16 if k < 6 else .7, s=.5, r=.4, fm=.3, harm=(1, .35, .15), amp=.6), int(t * SR)) for k, (m, t) in enumerate(fan)], (tone(N(48), 1.2, s=.5, r=.6, harm=(1, .5, .2), amp=.4), int(.84 * SR)))), wet=.35))
 save("tap", tone(N(91), .02, d=.03, s=0, r=.03, amp=.5))
 
-# 微生物ワールドBGM: 112BPM, 8小節ループ。透明感アルペジオ+パッド+ソフトキック+シェイカー
-bpm = 112; beat = 60 / bpm; bars = 8; L = int(bars * 4 * beat * SR)
-prog = [(57, 60, 64), (53, 57, 60), (48, 52, 55), (55, 59, 62)]
+# 微生物ワールドBGM: 明るいポップ 128BPM / Cメジャー / 8小節ループ / C-G-Am-F
+bpm = 128; beat = 60 / bpm; bars = 8; L = int(bars * 4 * beat * SR)
+prog = [(60, 64, 67), (59, 62, 67), (57, 60, 64), (57, 60, 65)]  # C G Am F
+roots = [36, 43, 45, 41]
+def at(b): return int(b * beat * SR)
+def fold(x):  # ループ末尾からはみ出た余韻を先頭へ折り返し、継ぎ目を無音クリックなしで繋ぐ
+    y = [0.0] * L
+    for i, v in enumerate(x): y[i % L] += v
+    return y
 def layer(fn):
-    parts = []; fn(parts); return mix(*parts, length=L)
-def arp(p):
+    parts = []; fn(parts); return fold(mix(*parts))
+A1 = [(0, 76, .5), (.5, 79, .5), (1, 79, .5), (1.5, 81, .5), (2, 79, 1), (3, 76, .5), (3.5, 74, .5),
+      (4, 74, .5), (4.5, 76, .5), (5, 79, 1), (6, 74, 1.5)]
+MEL = A1 + [(8, 72, .5), (8.5, 76, .5), (9, 81, 1), (10, 79, .5), (10.5, 76, .5), (11, 72, 1),
+            (12, 77, .5), (12.5, 76, .5), (13, 74, .5), (13.5, 72, .5), (14, 74, 2)] \
+    + [(t + 16, m, d) for t, m, d in A1] \
+    + [(24, 72, .5), (24.5, 76, .5), (25, 81, .5), (25.5, 84, .5), (26, 83, 1), (27, 81, 1),
+       (28, 79, .5), (28.5, 77, .5), (29, 76, .5), (29.5, 74, .5), (30, 72, 1.5)]
+def lead(p):
+    for t, m, d in MEL:
+        p.append((tone(N(m), d * beat * .8, a=.008, d=.12, s=.55, r=.12, fm=.25, ratio=1, harm=(1, .45, .2, .1), amp=.30), at(t)))
+def chords(p):  # 裏拍のポップなコードスタブ
     for b in range(bars):
-        ch = prog[b % 4]
-        for s in range(8):
-            m = ch[s % 3] + 12 * (1 + (s // 3) % 2)
-            p.append((tone(N(m), beat / 2 * .6, d=.1, s=.2, r=.15, fm=.4, ratio=2, harm=(1, .25), amp=.35), int((b * 4 + s / 2) * beat * SR)))
-def pad(p):
+        for s in (.5, 1.5, 2.5, 3.25, 3.5):
+            for m in prog[b % 4]:
+                p.append((tone(N(m), beat * .18, d=.08, s=.25, r=.08, harm=(1, .5, .25, .12), amp=.09), at(b * 4 + s)))
+def bass(p):  # 跳ねるオクターブベース
     for b in range(bars):
-        for m in prog[b % 4]:
-            p.append((tone(N(m), 4 * beat - .2, a=.4, d=.5, s=.7, r=.4, harm=(1, .15, .1), amp=.12), int(b * 4 * beat * SR)))
+        r = roots[b % 4]
+        for s, o in ((0, 0), (.75, 12), (1, 0), (1.5, 12), (2, 0), (2.75, 12), (3, 0), (3.5, 12)):
+            p.append((tone(N(r + o), beat * .3, d=.08, s=.4, r=.06, harm=(1, .6, .3), amp=.32), at(b * 4 + s)))
+def arp(p):  # キラキラベル16分アルペジオ
+    for b in range(bars):
+        ch = prog[b % 4]; seq = [ch[0], ch[1], ch[2], ch[0] + 12, ch[2], ch[1] + 12, ch[0] + 12, ch[1]]
+        for s in range(16):
+            m = seq[s % 8] + 12
+            p.append((tone(N(m), .03, d=.12, s=0, r=.18, fm=1.2, ratio=3.5, harm=(1, .2), amp=.22 if s % 4 else .3), at(b * 4 + s / 4)))
+    for b in range(0, bars, 2):  # 2小節ごとのきらめき
+        p.append((tone(N(96 + (b // 2) % 2 * 3), .05, d=.3, s=0, r=.4, fm=2, ratio=4.1, amp=.15), at(b * 4 + 3.5)))
 def drums(p):
     for k in range(bars * 4):
-        p.append((tone(55, .08, d=.12, s=0, r=.1, glide=-.6, amp=.7), int(k * beat * SR)))
-        p.append((noise(.02, r=.04, amp=.12, lp=.9), int((k + .5) * beat * SR)))
-def bass(p):
+        p.append((mix((tone(60, .07, d=.1, s=0, r=.08, glide=-.55, harm=(1, .3), amp=.75), 0), (noise(.004, r=.01, amp=.15, lp=.5), 0)), at(k)))
+        if k % 2:  # クラップ（多重ノイズ）＋スナップ
+            for j in range(3): p.append((noise(.008, r=.09 if j == 2 else .01, amp=.35, lp=.75), at(k) + j * 400))
+            p.append((tone(N(96), .01, d=.02, s=0, r=.02, amp=.15), at(k)))
+        for h in (.5, .25, .75):
+            p.append((noise(.01, r=.025, amp=.12 if h == .5 else .06, lp=.95), at(k + h)))
     for b in range(bars):
-        r = prog[b % 4][0] - 24
-        for s in (0, 1.5, 2, 3):
-            p.append((tone(N(r), beat * .4, d=.1, s=.5, r=.08, harm=(1, .5, .25), amp=.35), int((b * 4 + s) * beat * SR)))
-base = mix((layer(pad), 0), (layer(bass), 0), length=L)
+        if b % 2: p.append((noise(.015, r=.03, amp=.25, lp=.9), at(b * 4 + 3.75)))  # 小節末のフィル
+base = [a + b + c for a, b, c in zip(layer(lead), layer(chords), layer(bass))]
 save("bgm_micro_base", base, peak=.5)
-save("bgm_micro_arp", delay(layer(arp), t=beat * .75)[:L], peak=.45)
+save("bgm_micro_arp", fold(delay(layer(arp), t=beat * .75)), peak=.45)
 save("bgm_micro_drums", layer(drums), peak=.45)
 print("done")
 
