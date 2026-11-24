@@ -83,59 +83,79 @@ fan = [(72, 0), (76, .12), (79, .24), (84, .36), (79, .6), (84, .72), (88, .84)]
 save("win", reverb(delay(mix(*[(tone(N(m), .16 if k < 6 else .7, s=.5, r=.4, fm=.3, harm=(1, .35, .15), amp=.6), int(t * SR)) for k, (m, t) in enumerate(fan)], (tone(N(48), 1.2, s=.5, r=.6, harm=(1, .5, .2), amp=.4), int(.84 * SR)))), wet=.35))
 save("tap", tone(N(91), .02, d=.03, s=0, r=.03, amp=.5))
 
-# 微生物ワールドBGM: 明るいポップ 128BPM / Cメジャー / 8小節ループ / C-G-Am-F
-bpm = 128; beat = 60 / bpm; bars = 8; L = int(bars * 4 * beat * SR)
-prog = [(60, 64, 67), (59, 62, 67), (57, 60, 64), (57, 60, 65)]  # C G Am F
-roots = [36, 43, 45, 41]
-def at(b): return int(b * beat * SR)
-def fold(x):  # ループ末尾からはみ出た余韻を先頭へ折り返し、継ぎ目を無音クリックなしで繋ぐ
-    y = [0.0] * L
-    for i, v in enumerate(x): y[i % L] += v
-    return y
-def layer(fn):
-    parts = []; fn(parts); return fold(mix(*parts))
-A1 = [(0, 76, .5), (.5, 79, .5), (1, 79, .5), (1.5, 81, .5), (2, 79, 1), (3, 76, .5), (3.5, 74, .5),
-      (4, 74, .5), (4.5, 76, .5), (5, 79, 1), (6, 74, 1.5)]
-MEL = A1 + [(8, 72, .5), (8.5, 76, .5), (9, 81, 1), (10, 79, .5), (10.5, 76, .5), (11, 72, 1),
-            (12, 77, .5), (12.5, 76, .5), (13, 74, .5), (13.5, 72, .5), (14, 74, 2)] \
-    + [(t + 16, m, d) for t, m, d in A1] \
-    + [(24, 72, .5), (24.5, 76, .5), (25, 81, .5), (25.5, 84, .5), (26, 83, 1), (27, 81, 1),
-       (28, 79, .5), (28.5, 77, .5), (29, 76, .5), (29.5, 74, .5), (30, 72, 1.5)]
-def lead(p):
-    for t, m, d in MEL:
-        p.append((tone(N(m), d * beat * .8, a=.008, d=.12, s=.55, r=.12, fm=.25, ratio=1, harm=(1, .45, .2, .1), amp=.30), at(t)))
-def chords(p):  # 裏拍のポップなコードスタブ
-    for b in range(bars):
-        for s in (.5, 1.5, 2.5, 3.25, 3.5):
-            for m in prog[b % 4]:
-                p.append((tone(N(m), beat * .18, d=.08, s=.25, r=.08, harm=(1, .5, .25, .12), amp=.09), at(b * 4 + s)))
-def bass(p):  # 跳ねるオクターブベース
-    for b in range(bars):
-        r = roots[b % 4]
-        for s, o in ((0, 0), (.75, 12), (1, 0), (1.5, 12), (2, 0), (2.75, 12), (3, 0), (3.5, 12)):
-            p.append((tone(N(r + o), beat * .3, d=.08, s=.4, r=.06, harm=(1, .6, .3), amp=.32), at(b * 4 + s)))
-def arp(p):  # キラキラベル16分アルペジオ
-    for b in range(bars):
-        ch = prog[b % 4]; seq = [ch[0], ch[1], ch[2], ch[0] + 12, ch[2], ch[1] + 12, ch[0] + 12, ch[1]]
-        for s in range(16):
-            m = seq[s % 8] + 12
-            p.append((tone(N(m), .03, d=.12, s=0, r=.18, fm=1.2, ratio=3.5, harm=(1, .2), amp=.22 if s % 4 else .3), at(b * 4 + s / 4)))
-    for b in range(0, bars, 2):  # 2小節ごとのきらめき
-        p.append((tone(N(96 + (b // 2) % 2 * 3), .05, d=.3, s=0, r=.4, fm=2, ratio=4.1, amp=.15), at(b * 4 + 3.5)))
-def drums(p):
-    for k in range(bars * 4):
-        p.append((mix((tone(60, .07, d=.1, s=0, r=.08, glide=-.55, harm=(1, .3), amp=.75), 0), (noise(.004, r=.01, amp=.15, lp=.5), 0)), at(k)))
-        if k % 2:  # クラップ（多重ノイズ）＋スナップ
-            for j in range(3): p.append((noise(.008, r=.09 if j == 2 else .01, amp=.35, lp=.75), at(k) + j * 400))
-            p.append((tone(N(96), .01, d=.02, s=0, r=.02, amp=.15), at(k)))
-        for h in (.5, .25, .75):
-            p.append((noise(.01, r=.025, amp=.12 if h == .5 else .06, lp=.95), at(k + h)))
-    for b in range(bars):
-        if b % 2: p.append((noise(.015, r=.03, amp=.25, lp=.9), at(b * 4 + 3.75)))  # 小節末のフィル
-base = [a + b + c for a, b, c in zip(layer(lead), layer(chords), layer(bass))]
-save("bgm_micro_base", base, peak=.5)
-save("bgm_micro_arp", fold(delay(layer(arp), t=beat * .75)), peak=.45)
-save("bgm_micro_drums", layer(drums), peak=.45)
+# 微生物ワールドBGM: パターン4「エピックアドベンチャー」138BPM / Dマイナー→Fメジャー
+# 24小節ループ: A(Dm|Bb|F|C|Dm|Bb|Gm|A) → B(Bb|C|Am|Dm|Bb|C|F|F) → B(+2半音)
+# 3ステム: base=ベース+パッド+メインメロ / arp=ベル重ね+アルペジオ / drums
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_rs0 = random.getstate(); import bgm_candidates as BC; random.setstate(_rs0)
+def render_bgm_stems():
+    cfg = BC.PAT4; secs = cfg['sections']
+    total8 = sum(len(BC.parse_chords(x['chords'])) * 8 for x in secs)
+    song = BC.Song(cfg['bpm'], total8, cfg.get('swing', .5))
+    song.bus = {k: [0.0] * song.n for k in ('lead', 'base', 'arp', 'drums')}
+    pos = 0
+    for x in secs:
+        tr = x.get('tr', 0); bars = BC.parse_chords(x['chords'])
+        for txt, kind, amp in x['mel']:
+            notes, _ = BC.parse_mel(txt)
+            for p, d, m in notes:
+                song.note(kind, pos + p, d, m + tr, amp, 'lead', x.get('gate', .85))
+                dk, dt, da = x['double']
+                song.note(dk, pos + p, d, m + tr + dt, amp * da, 'lead' if dk == 'square' else 'arp', .8)
+        for b, chs in enumerate(bars):
+            bp = pos + b * 8
+            for ci, (root, iv) in enumerate(chs):
+                cl = 8 / len(chs); cp = bp + ci * cl; r = root + tr
+                for k in range(int(cl)):
+                    song.note('tri', cp + k, 1, r - 12, .42, 'base', .6)
+                vs = BC.voicing(r, iv, 60)
+                for m in vs:
+                    song.note('pad', cp, cl, m, .035, 'base', .95)
+                seq = [vs[0], vs[1], vs[2], vs[0] + 12, vs[2], vs[1], vs[0] + 12, vs[2]]  # 8分ベルアルペジオ
+                for k in range(int(cl)):
+                    song.note('bell', cp + k, 1, seq[k % 8] + 12, .05 if k % 2 else .07, 'arp', .5)
+            # ドラム（ループ用: 最終小節のスネアロールは区切りフィルとして残す）
+            for k in (0, 3, 4) if not x.get('big') else (0, 2, 3, 4, 6):
+                song.put(BC.drum('kick', .8), bp + k, 'drums')
+            for k in (2, 6):
+                song.put(BC.drum('snare', .45), bp + k, 'drums')
+            for k in range(8):
+                song.put(BC.drum('hat', .15), bp + k, 'drums'); song.put(BC.drum('hat', .07), bp + k + .5, 'drums')
+            if b % 4 == 3 and b != len(bars) - 1:
+                song.put(BC.drum('tom', .3), bp + 7, 'drums'); song.put(BC.drum('tom', .25), bp + 7.5, 'drums')
+            if b == len(bars) - 1:
+                for k in range(8): song.put(BC.drum('snare', .15 + .04 * k), bp + 4 + k / 2, 'drums')
+        song.put(BC.drum('crash', .35), pos, 'drums')
+        pos += len(bars) * 8
+    Lb = int(round(song.t(total8) * SR))
+    def wrap(x):  # 余韻をループ先頭へ折り返す
+        y = [0.0] * Lb
+        for i, v in enumerate(x): y[i % Lb] += v
+        return y
+    lead = wrap(song.bus['lead']); dl = int(song.beat * .75 * SR)
+    lead = [lead[i] + .28 * lead[i - dl] for i in range(Lb)]  # 循環ディレイ（継ぎ目でも連続）
+    base = [a + b for a, b in zip(lead, wrap(song.bus['base']))]
+    arpl = wrap(song.bus['arp']); arpl = [arpl[i] + .25 * arpl[i - dl] for i in range(Lb)]
+    return base, arpl, wrap(song.bus['drums'])
+def save_stems(stems, sum_peak=.89):
+    pk = max(abs(sum(v)) for v in zip(*stems.values())) or 1; g = sum_peak / pk
+    for name, x in stems.items():
+        with wave.open(os.path.join(OUT, name + ".wav"), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+            w.writeframes(b"".join(struct.pack("<h", int(max(-1, min(1, v * g)) * 32767)) for v in x))
+        print(name, len(x), "samples", round(len(x) / SR, 3), "s peak", round(max(abs(v) for v in x) * g, 3))
+    print("sum peak", sum_peak)
+_rs = random.getstate(); base, arpl, drm = render_bgm_stems(); random.setstate(_rs)
+# 旧BGMドラムが消費していた乱数を同順で進め、後続のボスSFXをビット単位で不変に保つ
+for _k in range(32):
+    noise(.004, r=.01)
+    if _k % 2:
+        for _j in range(3): noise(.008, r=.09 if _j == 2 else .01)
+    for _h in range(3): noise(.01, r=.025)
+for _b in range(8):
+    if _b % 2: noise(.015, r=.03)
+arpl = [v * 1.6 for v in arpl]; drm = [v * .55 for v in drm]  # ステムバランス
+save_stems({"bgm_micro_base": base, "bgm_micro_arp": arpl, "bgm_micro_drums": drm})
 print("done")
 
 # ---- ボス撃破演出用（追加）----
