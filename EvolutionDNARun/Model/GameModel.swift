@@ -59,6 +59,7 @@ struct BossDef: Codable {
     var hp: Double
     var weakness: Element
     var resist: Element
+    var kind: Int = 0
 }
 
 struct StageDef: Codable {
@@ -117,7 +118,6 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 enum StageGenerator {
-    static let bossNames = ["Gloopra", "Mitochondrax", "Ciliatus Rex", "Viruskull", "Plasmora"]
 
     static func stage(_ index: Int) -> StageDef {
         if index == 1 { return tutorial }
@@ -126,7 +126,8 @@ enum StageGenerator {
         var rows: [GateRow] = []
         var z: Float = -16
         let evoSlot = Int.random(in: 1..<max(2, rowCount - 1), using: &rng)
-        let weak: Element = [.fire, .ice, .thunder].randomElement(using: &rng)!
+        let bossKind = BossKind.allCases[(index / 2) % BossKind.allCases.count]
+        let weak = bossKind.weakness
         for r in 0..<rowCount {
             var a: GateKind, b: GateKind
             if r == evoSlot {
@@ -152,7 +153,7 @@ enum StageGenerator {
         }
         let length = z - 10
         var stage = StageDef(index: index, seed: rng.state, length: length, rows: rows, obstacles: obstacles,
-                             boss: BossDef(name: bossNames[index % bossNames.count], hp: 1, weakness: weak, resist: .none))
+                             boss: BossDef(name: bossKind.name, hp: 1, weakness: weak, resist: bossKind.resist, kind: bossKind.rawValue))
         // 最適解の 55〜70% を HP に設定：クリア可能だが、大きい数字を選ぶだけでは届かない
         let best = Solver.bestPower(stage)
         stage.boss.hp = max(8, (best * Double.random(in: 0.55...0.7, using: &rng)).rounded())
@@ -167,7 +168,7 @@ enum StageGenerator {
             GateRow(z: -60, left: .add(20), right: .mul(5)),
             GateRow(z: -76, left: .mul(2), right: .add(30)),
         ], obstacles: [ObstacleDef(z: -52, x: 1.2, sweep: 0, kills: 6)],
-           boss: BossDef(name: "Gloopra", hp: 1, weakness: .fire, resist: .ice))
+           boss: BossDef(name: BossKind.gorilla.name, hp: 1, weakness: .fire, resist: .ice, kind: 0))
         s.boss.hp = (Solver.bestPower(s) * 0.4).rounded()
         return s
     }()

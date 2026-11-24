@@ -116,7 +116,7 @@ final class GameController: NSObject, ObservableObject {
                 scene.rootNode.addChildNode(h); pickups.append((h, z0, lane, false))
             }
         }
-        let boss = CreatureFactory.boss(stage.boss); boss.position = SCNVector3(0, 2.4, stage.length - 2)
+        let boss = BossFactory.build(BossKind(rawValue: stage.boss.kind) ?? .gorilla); boss.position = SCNVector3(0, 0, stage.length - 4)
         scene.rootNode.addChildNode(boss); bossNode = boss
         bossMax = stage.boss.hp; bossHP = 1
 
@@ -375,11 +375,11 @@ final class GameController: NSObject, ObservableObject {
             shot.position = SCNVector3(x + u.position.x, 0.8, z + u.position.z)
             scene.rootNode.addChildNode(shot)
             let bp = boss.presentation.position
-            shot.runAction(.sequence([.move(to: SCNVector3(bp.x + Float.random(in: -1...1), bp.y, bp.z + 1.5), duration: 0.3), .removeFromParentNode()]))
+            shot.runAction(.sequence([.move(to: SCNVector3(bp.x + Float.random(in: -1...1), bp.y + 2.5, bp.z + 2), duration: 0.3), .removeFromParentNode()]))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, self.phase == .boss else { return }
                 AudioEngine.shared.play("hit", volume: 0.6); Haptics.shared.tap(0.4, sharp: 0.8)
-                self.scene.addParticleSystem(FX.burst(color: .white, count: 30, speed: 4, size: 0.15), transform: SCNMatrix4MakeTranslation(bp.x, bp.y, bp.z + 1.5))
+                self.scene.addParticleSystem(FX.burst(color: .white, count: 30, speed: 4, size: 0.15), transform: SCNMatrix4MakeTranslation(bp.x, bp.y + 2.5, bp.z + 2))
                 boss.runAction(.sequence([.scale(to: 0.94, duration: 0.05), .scale(to: 1, duration: 0.1)]))
             }
         }
@@ -397,7 +397,7 @@ final class GameController: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, let boss = self.bossNode else { return }
             AudioEngine.shared.play("boss_down"); Haptics.shared.rumble(0.6, intensity: 1); self.shake = 0.8
-            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.6, blue: 0.8, alpha: 1), count: 900, speed: 16, size: 0.5), transform: SCNMatrix4MakeTranslation(boss.position.x, boss.position.y, boss.position.z))
+            self.scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.6, blue: 0.8, alpha: 1), count: 900, speed: 16, size: 0.5), transform: SCNMatrix4MakeTranslation(boss.position.x, boss.position.y + 2.5, boss.position.z))
             boss.runAction(.sequence([.group([.scale(to: 1.6, duration: 0.5), .fadeOut(duration: 0.5)]), .removeFromParentNode()]))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { AudioEngine.shared.play("win") }
         }
