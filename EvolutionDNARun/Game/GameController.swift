@@ -14,6 +14,10 @@ final class GameController: NSObject, ObservableObject {
     @Published var popups: [Popup] = []
     @Published var abilityReady = false
     @Published var evolvedName: String?
+    @Published var dnaCollected = 0
+    @Published var element: Element = .none
+    @Published var sizeClass = 0
+    private var pickups: [(node: SCNNode, z: Float, x: Float, taken: Bool)] = []
 
     struct Popup: Identifiable { let id = UUID(); let text: String; let color: Color }
 
@@ -57,7 +61,8 @@ final class GameController: NSObject, ObservableObject {
         view.preferredFramesPerSecond = 60
         view.isPlaying = true
         view.rendersContinuously = true
-        WorldBuilder.build(into: scene, length: stage.length)
+        if stage.index <= 10 { WorldJungle.build(into: scene, length: stage.length) }  // オーナー指定のプレイ画面イメージ
+        else { WorldBuilder.build(into: scene, length: stage.length) }
 
         let cam = SCNCamera(); cam.fieldOfView = 58; cam.zFar = 140
         cam.wantsHDR = true; cam.wantsExposureAdaptation = false; cam.exposureOffset = 0.15
@@ -66,6 +71,14 @@ final class GameController: NSObject, ObservableObject {
         camera.camera = cam
         scene.rootNode.addChildNode(camera); view.pointOfView = camera
         let motes = SCNNode(); motes.position = SCNVector3(0, 0, -15); motes.addParticleSystem(WorldBuilder.motes()); camera.addChildNode(motes)
+        // 走行時の土煙
+        let dust = SCNParticleSystem(); dust.particleImage = FX.softDot; dust.birthRate = 18; dust.particleLifeSpan = 0.7
+        dust.particleSize = 0.45; dust.particleSizeVariation = 0.2; dust.particleColor = UIColor(white: 1, alpha: 0.55)
+        dust.emitterShape = SCNBox(width: 1.2, height: 0.1, length: 0.3, chamferRadius: 0); dust.birthLocation = .volume
+        dust.particleVelocity = 1.2; dust.spreadingAngle = 25; dust.emittingDirection = SCNVector3(0, 0.4, 1)
+        dust.propertyControllers = [.opacity: SCNParticlePropertyController(animation: { let a = CAKeyframeAnimation(); a.values = [0.8, 0]; return a }())]
+        let dustNode = SCNNode(); dustNode.name = "dust"; dustNode.position = SCNVector3(0, 0.1, 0.6); dustNode.addParticleSystem(dust)
+        swarmNode.addChildNode(dustNode)
 
         scene.rootNode.addChildNode(swarmNode)
         let glow = SCNNode(geometry: SCNPlane(width: 3, height: 3))
@@ -78,7 +91,7 @@ final class GameController: NSObject, ObservableObject {
         swarmNode.addChildNode(countLabel)
 
         for (i, r) in stage.rows.enumerated() {
-            let w = WorldBuilder.laneHalfWidth - 0.1
+            let w = WorldBuilder.laneHalfWidth - 0.15
             let l = GateBuilder.gate(r.left, width: w); l.position = SCNVector3(-w / 2 - 0.05, 0, r.z)
             let rr = GateBuilder.gate(r.right, width: w); rr.position = SCNVector3(w / 2 + 0.05, 0, r.z)
             scene.rootNode.addChildNode(l); scene.rootNode.addChildNode(rr)
@@ -90,6 +103,18 @@ final class GameController: NSObject, ObservableObject {
                 n.runAction(.repeatForever(.sequence([.moveBy(x: CGFloat(o.sweep), y: 0, z: 0, duration: 1.1), .moveBy(x: CGFloat(-o.sweep * 2), y: 0, z: 0, duration: 2.2), .moveBy(x: CGFloat(o.sweep), y: 0, z: 0, duration: 1.1)])))
             }
             scene.rootNode.addChildNode(n); obstacles.append((o, n, false))
+        }
+        // DNA収集アイテム：ゲート間に一列、左右交互
+        let gz = [Float(-4)] + stage.rows.map(\.z)
+        for i in 0..<(gz.count - 1) {
+            let lane: Float = (i % 2 == 0 ? -1 : 1) * 1.3
+            for k in 0..<4 {
+                let z0 = gz[i] - 4 - Float(k) * 1.8
+                if z0 < gz[i + 1] + 2 { break }
+                let h = Helix.node(); h.position = SCNVector3(lane, 1.0, z0); h.eulerAngles.z = -0.5
+                h.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 1.6)))
+                scene.rootNode.addChildNode(h); pickups.append((h, z0, lane, false))
+            }
         }
         let boss = CreatureFactory.boss(stage.boss); boss.position = SCNVector3(0, 2.4, stage.length - 2)
         scene.rootNode.addChildNode(boss); bossNode = boss
@@ -140,6 +165,13 @@ final class GameController: NSObject, ObservableObject {
         swarmNode.position = SCNVector3(x, 0, z)
         progress = min(1, z / (stage.length + 8))
 
+        for i in pickups.indices where !pickups[i].taken && abs(z - pickups[i].z) < 0.7 && abs(x - pickups[i].x) < 0.8 + spread * 0.7 {
+            pickups[i].taken = true; dnaCollected += 1
+            let n = pickups[i].node
+            n.runAction(.sequence([.group([.move(by: SCNVector3(0, 1.5, 0), duration: 0.25), .scale(to: 0.01, duration: 0.25)]), .removeFromParentNode()]))
+            scene.addParticleSystem(FX.burst(color: UIColor(red: 0.7, green: 0.6, blue: 1, alpha: 1), count: 40, speed: 3, size: 0.15), transform: SCNMatrix4MakeTranslation(n.position.x, 1, n.position.z))
+            AudioEngine.shared.pop(scale: 0); Haptics.shared.tap(0.3, sharp: 0.9)
+        }
         if nextRow < stage.rows.count, z <= stage.rows[nextRow].z {
             let r = stage.rows[nextRow]; let gn = gateNodes[nextRow]
             let left = x < 0
@@ -166,7 +198,7 @@ final class GameController: NSObject, ObservableObject {
     }
 
     private var spread: Float { Float(sqrt(Double(min(swarm.count, maxVisible)))) * 0.28 * unitScale }
-    private var unitScale: Float { [1, 1.9, 2.8, 3.8][min(swarm.sizeClass, 3)] }
+    private var unitScale: Float { swarm.element == .none ? [1, 1.9, 2.8, 3.8][min(swarm.sizeClass, 3)] : [1.05, 1.45, 2.0, 2.7][min(swarm.sizeClass, 3)] }
 
     private func passGate(_ g: GateKind, node: SCNNode, other: SCNNode) {
         let old = swarm.count; let oldClass = swarm.sizeClass; let oldEl = swarm.element
@@ -220,6 +252,17 @@ final class GameController: NSObject, ObservableObject {
             u.runAction(.sequence([.group([.scale(to: 0.2, duration: 0.35), .rotateBy(x: 0, y: .pi * 2, z: 0, duration: 0.35)])]))
         }
         evolvedName = CreatureCatalog.name(element: e, sizeClass: swarm.sizeClass)
+        element = e; Progress.shared.discover(e, swarm.sizeClass)
+        // DNAの二重らせんが群れを包む
+        let ring = SCNNode(); ring.position = SCNVector3(0, 0, 0); swarmNode.addChildNode(ring)
+        for k in 0..<3 {
+            let h = Helix.node(); let a = Float(k) / 3 * .pi * 2
+            h.position = SCNVector3(cos(a) * (1.2 + spread), 1.2, sin(a) * (1.2 + spread)); h.scale = SCNVector3(1.4, 1.4, 1.4); ring.addChildNode(h)
+        }
+        ring.runAction(.sequence([.group([.rotateBy(x: 0, y: .pi * 3, z: 0, duration: 0.9), .sequence([.wait(duration: 0.6), .fadeOut(duration: 0.3)])]), .removeFromParentNode()]))
+        let flash = SCNNode(); flash.light = SCNLight(); flash.light!.type = .omni; flash.light!.color = Palette.color(e); flash.light!.intensity = 0
+        flash.position = SCNVector3(0, 2, 0); swarmNode.addChildNode(flash)
+        flash.runAction(.sequence([.customAction(duration: 0.9) { n, t in n.light?.intensity = 3000 * sin(CGFloat.pi * t / 0.9) }, .removeFromParentNode()]))
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self else { return }
             self.scene.addParticleSystem(FX.burst(color: Palette.color(e), count: 300, speed: 8, size: 0.25), transform: SCNMatrix4MakeTranslation(self.x, 0.6, self.z))
@@ -238,6 +281,7 @@ final class GameController: NSObject, ObservableObject {
             Haptics.shared.tap(1, sharp: 0.3); self.shake = 0.3
             self.scene.addParticleSystem(FX.burst(color: UIColor(red: 0.85, green: 0.5, blue: 1, alpha: 1), count: 280, speed: 9, size: 0.3), transform: SCNMatrix4MakeTranslation(self.x, 0.8, self.z))
             self.rebuildUnits(animated: true, force: true)
+            self.sizeClass = self.swarm.sizeClass; Progress.shared.discover(self.swarm.element, self.swarm.sizeClass)
             self.displayCount = self.swarm.count; self.updateLabel()
             self.popup("MERGE!", .purple)
             self.evolvedName = CreatureCatalog.name(element: self.swarm.element, sizeClass: self.swarm.sizeClass)
@@ -248,7 +292,8 @@ final class GameController: NSObject, ObservableObject {
     // MARK: - 群体描画（最大 maxVisible 体。論理数とは独立）
     private var builtKey = ""
     private func rebuildUnits(animated: Bool, force: Bool = false) {
-        let visible = max(0, min(swarm.count, swarm.sizeClass >= 2 ? 12 : maxVisible))
+        let cap = swarm.element == .none ? maxVisible : 45   // 動物形態はノード数が多いので描画上限を下げる
+        let visible = max(0, min(swarm.count, swarm.sizeClass >= 2 ? 12 : cap))
         let key = "\(swarm.element.rawValue)-\(swarm.sizeClass)"
         if force || key != builtKey { units.forEach { $0.removeFromParentNode() }; units.removeAll(); builtKey = key }
         while units.count > visible { units.removeLast().runAction(.sequence([.scale(to: 0, duration: 0.15), .removeFromParentNode()])) }
@@ -356,7 +401,7 @@ final class GameController: NSObject, ObservableObject {
             boss.runAction(.sequence([.group([.scale(to: 1.6, duration: 0.5), .fadeOut(duration: 0.5)]), .removeFromParentNode()]))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { AudioEngine.shared.play("win") }
         }
-        Progress.shared.clear(stage: stage.index, dna: 20 + stage.index * 5, element: swarm.element, sizeClass: swarm.sizeClass)
+        Progress.shared.clear(stage: stage.index, dna: 20 + stage.index * 5 + dnaCollected, element: swarm.element, sizeClass: swarm.sizeClass)
     }
 
     private func lose() {

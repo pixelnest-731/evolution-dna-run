@@ -69,12 +69,13 @@ enum CreatureFactory {
         let key = "\(element.rawValue)-\(sizeClass)"
         if cache[key] == nil { cache[key] = build(element: element, sizeClass: sizeClass) }
         let n = cache[key]!.clone()
-        animateIdle(n, sizeClass: sizeClass)
+        if element == .none { animateIdle(n, sizeClass: sizeClass) } else { AnimalFactory.animateRun(n) }
         return n
     }
 
     static func build(element: Element, sizeClass: Int) -> SCNNode {
-        let c = Palette.color(element)
+        if element != .none { return AnimalFactory.build(element: element, sizeClass: sizeClass) }
+        let c = UIColor(red: 0.45, green: 0.78, blue: 1.0, alpha: 1)
         let root = SCNNode(); root.name = "creature"
         let body = SCNNode(); body.name = "body"; root.addChildNode(body)
 
@@ -83,14 +84,15 @@ enum CreatureFactory {
         let shell = SCNNode(geometry: SCNSphere(radius: r))
         (shell.geometry as! SCNSphere).segmentCount = 28
         shell.geometry!.materials = [Mat.jelly(c)]
-        switch element {
-        case .fire: shell.scale = SCNVector3(1.0, 0.92, 1.15)
-        case .ice: shell.scale = SCNVector3(0.95, 1.05, 0.95)
-        case .thunder: shell.scale = SCNVector3(1.1, 0.85, 1.05)
-        default: break
-        }
+        shell.scale = SCNVector3(1.0, 0.85, 1.25)  // 参考画像: 豆型の微生物
         body.addChildNode(shell)
 
+        // 内部の泡（参考画像の紫の気泡）
+        for (i, p) in [(-0.1, -0.08, 0.05), (0.08, -0.12, -0.08), (0.12, 0.02, 0.1), (-0.05, -0.15, -0.12)].enumerated() {
+            let b = SCNNode(geometry: SCNSphere(radius: CGFloat(0.06 + Double(i % 2) * 0.03)))
+            b.geometry!.materials = [Mat.jelly(UIColor(red: 0.75, green: 0.5, blue: 1, alpha: 1), alpha: 0.8)]
+            b.position = SCNVector3(Float(p.0), Float(p.1), Float(p.2)); body.addChildNode(b)
+        }
         // 発光する核
         let nucleus = SCNNode(geometry: SCNSphere(radius: r * 0.38))
         nucleus.geometry!.materials = [Mat.glow(c.lighter(0.55))]
@@ -130,34 +132,6 @@ enum CreatureFactory {
             }
             body.addChildNode(cilia)
             cilia.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 3)))
-        case .fire:
-            let horn = SCNCone(topRadius: 0, bottomRadius: 0.06, height: 0.22); horn.materials = [Mat.solid(UIColor(red: 1, green: 0.85, blue: 0.5, alpha: 1))]
-            for s in [-1, 1] as [Float] {
-                let h = SCNNode(geometry: horn); h.position = SCNVector3(s * 0.15, 0.27, 0.0); h.eulerAngles = SCNVector3(-0.3, 0, -s * 0.45)
-                body.addChildNode(h)
-            }
-            let flame = SCNCone(topRadius: 0, bottomRadius: 0.13, height: 0.42); flame.materials = [Mat.glow(UIColor(red: 1, green: 0.6, blue: 0.15, alpha: 0.9))]
-            let tail = SCNNode(geometry: flame); tail.name = "tail"; tail.position = SCNVector3(0, 0.05, -0.36); tail.eulerAngles = SCNVector3(-.pi / 2 - 0.4, 0, 0)
-            body.addChildNode(tail)
-            tail.runAction(.repeatForever(.sequence([.scale(to: 1.25, duration: 0.18), .scale(to: 0.85, duration: 0.22)])))
-        case .ice:
-            let spike = SCNPyramid(width: 0.12, height: 0.3, length: 0.12); spike.materials = [Mat.jelly(UIColor(red: 0.8, green: 0.95, blue: 1, alpha: 1), alpha: 0.8)]
-            for k in 0..<5 {
-                let a = Float(k - 2) * 0.42
-                let s = SCNNode(geometry: spike); s.position = SCNVector3(sin(a) * 0.2, 0.22, -0.08 - abs(sin(a)) * 0.05)
-                s.eulerAngles = SCNVector3(-0.5, 0, -a); body.addChildNode(s)
-            }
-        case .thunder:
-            let wingG = SCNSphere(radius: 0.22); wingG.materials = [Mat.jelly(UIColor(red: 1, green: 0.95, blue: 0.5, alpha: 1), alpha: 0.55)]
-            for s in [-1, 1] as [Float] {
-                let pivot = SCNNode(); pivot.position = SCNVector3(s * 0.22, 0.12, -0.05)
-                let w = SCNNode(geometry: wingG); w.scale = SCNVector3(1.4, 0.12, 0.8); w.position = SCNVector3(s * 0.26, 0, 0)
-                pivot.addChildNode(w); body.addChildNode(pivot)
-                pivot.runAction(.repeatForever(.sequence([.rotateTo(x: 0, y: 0, z: CGFloat(s) * 0.6, duration: 0.09), .rotateTo(x: 0, y: 0, z: CGFloat(-s) * 0.3, duration: 0.09)])))
-            }
-            let bolt = SCNNode(geometry: SCNBox(width: 0.04, height: 0.2, length: 0.04, chamferRadius: 0.01))
-            bolt.geometry!.materials = [Mat.glow(.white)]; bolt.position = SCNVector3(0, 0.36, 0); bolt.eulerAngles.z = 0.4
-            body.addChildNode(bolt)
         default: break
         }
 

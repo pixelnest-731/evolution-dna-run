@@ -49,6 +49,9 @@ final class Progress: ObservableObject {
         if first { data.currentStage = max(data.currentStage, stage + 1); data.stagesSinceAd += 1 }
         save()
     }
+    func discover(_ e: Element, _ k: Int) {
+        if data.discovered.insert("\(e.rawValue)-\(k)").inserted { save() }
+    }
     func setVolumes(bgm: Float, sfx: Float, haptics: Bool) {
         data.bgmVolume = bgm; data.sfxVolume = sfx; data.haptics = haptics; apply(); save()
     }

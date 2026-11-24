@@ -6,67 +6,149 @@ struct EvolutionDNARunApp: App {
     var body: some Scene { WindowGroup { RootView().preferredColorScheme(.dark).statusBarHidden() } }
 }
 
-enum DS {   // AI社員08: デザインシステム（C案：プレミアム3Dハイブリッド／明るいトゥーン）
-    static let sky = Color(red: 0.36, green: 0.72, blue: 1.0)
-    static let navy = Color(red: 0.10, green: 0.16, blue: 0.42)
-    static let good = Color(red: 0.30, green: 0.85, blue: 0.40)
-    static let gold = Color(red: 1.0, green: 0.78, blue: 0.25)
+/// AI社員08: デザインシステム（オーナー提供のデザイン参考画像に準拠）
+enum DS {
+    static let navy = Color(red: 0.12, green: 0.18, blue: 0.42)
+    static let good = Color(red: 0.30, green: 0.85, blue: 0.35)
+    static let gold = Color(red: 1.0, green: 0.80, blue: 0.30)
+    static let goldDeep = Color(red: 0.85, green: 0.55, blue: 0.1)
     static let violet = Color(red: 0.62, green: 0.40, blue: 1.0)
+    static let blue = Color(red: 0.22, green: 0.50, blue: 0.98)
     static func font(_ s: CGFloat, _ w: Font.Weight = .heavy) -> Font { .system(size: s, weight: w, design: .rounded) }
 }
 
 struct RootView: View {
-    @State private var stageIndex: Int?
+    enum Screen: Equatable { case home, game(Int), collection }
+    @State private var screen: Screen = .home
     @ObservedObject var progress = Progress.shared
     var body: some View {
         ZStack {
-            if let s = stageIndex {
-                GameScreen(stageIndex: s, onExit: { next in stageIndex = next })
-                    .id(s).transition(.opacity)
-            } else {
-                HomeView(onPlay: { stageIndex = progress.data.currentStage })
-                    .transition(.opacity)
+            switch screen {
+            case .home:
+                HomeView(onPlay: { let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = .game(d > 0 ? d : progress.data.currentStage) }, onCollection: { screen = .collection })
+            case .game(let s):
+                GameScreen(stageIndex: s, onExit: { next in screen = next.map { .game($0) } ?? .home }).id(s)
+            case .collection:
+                CollectionView(onClose: { screen = .home })
             }
         }
-        .animation(.easeInOut(duration: 0.35), value: stageIndex)
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.3), value: screen)
+    }
+}
+
+// MARK: - 共通部品
+/// ゲーム風の立体ボタン（金縁・下に影）
+struct GameButtonStyle: ButtonStyle {
+    var top: Color; var bottom: Color; var radius: CGFloat = 40
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.6), DS.goldDeep], startPoint: .top, endPoint: .bottom), lineWidth: 5))
+            .shadow(color: .black.opacity(0.3), radius: 0, x: 0, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+struct CircleIcon: View {
+    let icon: String; var color: Color = DS.blue; let action: () -> Void
+    var body: some View {
+        Button(action: { AudioEngine.shared.play("tap"); action() }) {
+            Image(systemName: icon).font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 50, height: 50)
+                .background(LinearGradient(colors: [color.opacity(0.9), color], startPoint: .top, endPoint: .bottom), in: Circle())
+                .overlay(Circle().stroke(.white, lineWidth: 3)).shadow(color: .black.opacity(0.25), radius: 0, x: 0, y: 3)
+        }
+    }
+}
+
+struct GemCounter: View {
+    let value: Int
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("💎").font(.system(size: 26)).padding(.leading, -6)
+            Text(value.formatted()).font(DS.font(20)).foregroundStyle(.white).monospacedDigit()
+        }
+        .padding(.leading, 12).padding(.trailing, 14).padding(.vertical, 5)
+        .background(DS.navy.opacity(0.85), in: Capsule())
+    }
+}
+
+/// ステージ進行：丸ドット＋王冠
+struct StageDots: View {
+    let progress: Float
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<4) { i in
+                let reached = progress >= Float(i) / 4
+                Circle().fill(i == 0 ? DS.good : (reached ? DS.gold : Color(white: 0.3)))
+                    .overlay(Circle().stroke(.white, lineWidth: 2)).frame(width: 20, height: 20)
+                Rectangle().fill(progress >= Float(i + 1) / 4 ? DS.gold : Color(white: 0.35)).frame(height: 5)
+            }
+            Text("👑").font(.system(size: 22))
+        }
+        .frame(width: 190)
+    }
+}
+
+struct Thumb: View {
+    let e: Element; let k: Int; var size: CGFloat = 70; var locked = false
+    var body: some View {
+        Image(uiImage: Thumbnails.image(e, k)).resizable().scaledToFit().frame(width: size, height: size)
+            .colorMultiply(locked ? .black : .white).opacity(locked ? 0.55 : 1)
+            .overlay { if locked { Text("?").font(DS.font(size * 0.35, .black)).foregroundStyle(.white.opacity(0.8)) } }
     }
 }
 
 // MARK: - ホーム
 struct HomeView: View {
     var onPlay: () -> Void
+    var onCollection: () -> Void
     @ObservedObject var progress = Progress.shared
     @State private var showSettings = false
     @State private var pulse = false
     var body: some View {
         ZStack {
-            LinearGradient(colors: [DS.sky, Color(red: 0.55, green: 0.85, blue: 1), Color(red: 0.6, green: 0.95, blue: 0.85)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             ShowcaseView().ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack {
-                    CircleButton(icon: "gearshape.fill") { showSettings = true }
+                HStack(spacing: 10) {
+                    Thumb(e: .fire, k: 0, size: 54)
+                        .background(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.6), Color(red: 1, green: 0.6, blue: 0.35)], startPoint: .top, endPoint: .bottom), in: Circle())
+                        .clipShape(Circle()).overlay(Circle().stroke(DS.gold, lineWidth: 4))
                     Spacer()
-                    Pill { Image(systemName: "diamond.fill").foregroundStyle(DS.violet); Text("\(progress.data.dna) DNA").font(DS.font(18)) }
-                }.padding(.horizontal, 18).padding(.top, 8)
-                VStack(spacing: -6) {
-                    Text("Evolution").font(DS.font(46, .black))
-                    Text("DNA Run").font(DS.font(52, .black)).foregroundStyle(LinearGradient(colors: [DS.gold, Color(red: 1, green: 0.5, blue: 0.3)], startPoint: .top, endPoint: .bottom))
+                    GemCounter(value: progress.data.dna)
+                    CircleIcon(icon: "gearshape.fill") { showSettings = true }
+                }.padding(.horizontal, 16).padding(.top, 6)
+                VStack(spacing: -8) {
+                    Text("Evolution").font(DS.font(42, .black)).foregroundStyle(.white)
+                    Text("DNA Run").font(DS.font(46, .black))
+                        .foregroundStyle(LinearGradient(colors: [Color(red: 0.6, green: 0.95, blue: 1), Color(red: 0.4, green: 0.6, blue: 1)], startPoint: .top, endPoint: .bottom))
                 }
-                .foregroundStyle(.white).shadow(color: DS.navy.opacity(0.6), radius: 0, x: 0, y: 4).padding(.top, 18)
-                Text("1匹から、最強の生命体へ。").font(DS.font(16, .bold)).foregroundStyle(.white).shadow(color: DS.navy.opacity(0.5), radius: 2).padding(.top, 6)
+                .shadow(color: DS.navy, radius: 0, x: 0, y: 4).shadow(color: DS.navy, radius: 0, x: 2, y: 0).shadow(color: DS.navy, radius: 0, x: -2, y: 0)
+                .padding(.top, 8)
                 Spacer()
                 Button(action: { AudioEngine.shared.play("tap"); onPlay() }) {
-                    VStack(spacing: 2) {
-                        Text("PLAY").font(DS.font(38, .black))
-                        Text("STAGE \(progress.data.currentStage)").font(DS.font(15, .bold)).opacity(0.85)
+                    HStack(spacing: 12) {
+                        Image(systemName: "play.fill").font(.system(size: 44, weight: .black))
+                        VStack(alignment: .leading, spacing: -2) {
+                            Text("PLAY").font(DS.font(30, .black))
+                            Text("STAGE \(progress.data.currentStage)").font(DS.font(14, .bold)).opacity(0.9)
+                        }
                     }
-                    .foregroundStyle(.white).frame(width: 250, height: 92)
-                    .background(LinearGradient(colors: [Color(red: 0.45, green: 0.95, blue: 0.45), Color(red: 0.15, green: 0.7, blue: 0.3)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 30))
-                    .overlay(RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(0.8), lineWidth: 3))
-                    .shadow(color: Color(red: 0.05, green: 0.4, blue: 0.15), radius: 0, x: 0, y: 6)
-                    .scaleEffect(pulse ? 1.04 : 1)
+                    .foregroundStyle(.white).shadow(color: .black.opacity(0.25), radius: 0, x: 0, y: 2)
+                    .frame(width: 270, height: 92)
                 }
-                .padding(.bottom, 50)
+                .buttonStyle(GameButtonStyle(top: Color(red: 0.55, green: 0.98, blue: 0.3), bottom: Color(red: 0.15, green: 0.72, blue: 0.15), radius: 46))
+                .scaleEffect(pulse ? 1.03 : 1)
+                Button(action: { AudioEngine.shared.play("tap"); onCollection() }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "book.fill").font(.system(size: 26, weight: .bold))
+                        Text("図鑑").font(DS.font(20))
+                    }.foregroundStyle(.white).frame(width: 150, height: 64)
+                }
+                .buttonStyle(GameButtonStyle(top: Color(red: 1, green: 0.85, blue: 0.3), bottom: Color(red: 0.95, green: 0.6, blue: 0.1), radius: 32))
+                .padding(.top, 18).padding(.bottom, 36)
             }
         }
         .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse = true } }
@@ -74,21 +156,47 @@ struct HomeView: View {
     }
 }
 
-/// ホームのお気に入り生命体（呼吸・瞬き・ゆっくり回転）
+/// ホームの3Dステージ：楽園の背景、石の台座、光るリング、DNAらせん、クリスタル、翼のある子ドラゴン
 struct ShowcaseView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
-        let v = SCNView(); v.backgroundColor = .clear; v.antialiasingMode = .multisampling4X
-        let s = SCNScene(); v.scene = s; v.isPlaying = true; v.allowsCameraControl = false
-        let cam = SCNNode(); cam.camera = SCNCamera(); cam.camera!.fieldOfView = 35; cam.position = SCNVector3(0, 1.2, 7.5); cam.look(at: SCNVector3(0, 0.3, 0))
-        s.rootNode.addChildNode(cam)
-        let l = SCNNode(); l.light = SCNLight(); l.light!.type = .directional; l.light!.intensity = 1000; l.eulerAngles = SCNVector3(-0.8, 0.5, 0); s.rootNode.addChildNode(l)
-        let a = SCNNode(); a.light = SCNLight(); a.light!.type = .ambient; a.light!.intensity = 500; s.rootNode.addChildNode(a)
-        let pedestal = SCNNode(geometry: SCNCylinder(radius: 0.9, height: 0.2))
-        pedestal.geometry!.materials = [Mat.jelly(UIColor(red: 0.6, green: 0.9, blue: 1, alpha: 1), alpha: 0.7)]
-        pedestal.position = SCNVector3(0, -0.85, 0); pedestal.scale = SCNVector3(1, 1, 1); s.rootNode.addChildNode(pedestal)
-        let c = CreatureFactory.unit(element: .fire, sizeClass: 0); c.scale = SCNVector3(1.5, 1.5, 1.5); c.position.y = -0.25
-        s.rootNode.addChildNode(c)
-        c.runAction(.repeatForever(.sequence([.rotateTo(x: 0, y: 0.5, z: 0, duration: 2.5), .rotateTo(x: 0, y: -0.5, z: 0, duration: 2.5)])))
+        let v = SCNView(); v.antialiasingMode = .multisampling4X
+        let s = SCNScene(); v.scene = s; v.isPlaying = true; v.rendersContinuously = true
+        s.background.contents = FX.gradientImage(UIColor(red: 0.22, green: 0.55, blue: 0.98, alpha: 1), UIColor(red: 0.8, green: 0.93, blue: 1, alpha: 1))
+        let cam = SCNNode(); cam.camera = SCNCamera(); cam.camera!.fieldOfView = 50
+        cam.camera!.wantsHDR = true; cam.camera!.wantsExposureAdaptation = false; cam.camera!.exposureOffset = 0.15
+        cam.camera!.bloomIntensity = 0.5; cam.camera!.bloomThreshold = 0.9; cam.camera!.saturation = 1.2
+        cam.position = SCNVector3(0, 2.4, 11.5); cam.look(at: SCNVector3(0, 1.6, 0)); s.rootNode.addChildNode(cam); v.pointOfView = cam
+        let sun = SCNNode(); sun.light = SCNLight(); sun.light!.type = .directional; sun.light!.intensity = 1100; sun.eulerAngles = SCNVector3(-0.8, 0.5, 0); s.rootNode.addChildNode(sun)
+        let amb = SCNNode(); amb.light = SCNLight(); amb.light!.type = .ambient; amb.light!.intensity = 650; s.rootNode.addChildNode(amb)
+        var rng = SplitMix64(seed: 9)
+        let water = SCNNode(geometry: SCNPlane(width: 160, height: 160)); water.eulerAngles.x = -.pi / 2; water.position = SCNVector3(0, -0.6, -30)
+        let wm = SCNMaterial(); wm.lightingModel = .constant; wm.diffuse.contents = UIColor(red: 0.2, green: 0.72, blue: 0.98, alpha: 1); water.geometry!.materials = [wm]
+        s.rootNode.addChildNode(water)
+        for (x, y, z, big) in [(-9.0, 4.0, -18.0, true), (10.0, 6.0, -22.0, true), (-4.0, 9.0, -32.0, false), (6.0, 2.5, -12.0, false)] {
+            let n = WorldJungle.floatingIsland(&rng, big: big); n.position = SCNVector3(Float(x), Float(y), Float(z)); s.rootNode.addChildNode(n)
+        }
+        for (x, z) in [(-4.2, -1.5), (4.4, -2.0), (-5.0, 2.0), (5.0, 2.5)] {
+            let isle = WorldJungle.islet(&rng); isle.position = SCNVector3(Float(x), -0.5, Float(z)); s.rootNode.addChildNode(isle)
+        }
+        for i in 0..<4 { let c = WorldJungle.cloud(&rng); c.position = SCNVector3(Float(i % 2 == 0 ? -1 : 1) * Float(8 + i * 4), Float(11 + i), -38); s.rootNode.addChildNode(c) }
+        let stone = SCNNode(geometry: SCNCylinder(radius: 1.7, height: 0.5)); stone.geometry!.materials = [Toon.mat(UIColor(red: 0.72, green: 0.72, blue: 0.8, alpha: 1), rimStrength: 0.3)]
+        stone.position = SCNVector3(0, -0.25, 0); s.rootNode.addChildNode(stone)
+        let ring = SCNNode(geometry: SCNTorus(ringRadius: 1.55, pipeRadius: 0.05)); ring.geometry!.materials = [Mat.glow(UIColor(red: 0.4, green: 0.9, blue: 1, alpha: 1))]
+        ring.position.y = 0.02; s.rootNode.addChildNode(ring)
+        ring.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.5, duration: 0.8), .fadeOpacity(to: 1, duration: 0.8)])))
+        let helix = Helix.node(); helix.scale = SCNVector3(2.2, 2.2, 2.2); helix.position = SCNVector3(0, 2.6, -4.5); s.rootNode.addChildNode(helix)
+        helix.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 6)))
+        for (x, h) in [(-2.3, 1.3), (2.4, 1.0)] {
+            let c = WorldJungle.crystal(UIColor(red: 0.8, green: 0.55, blue: 1, alpha: 1), h: Float(h)); c.position = SCNVector3(Float(x), 0.5, 0.6); s.rootNode.addChildNode(c)
+        }
+        let d = CreatureFactory.build(element: .fire, sizeClass: 1)
+        d.scale = SCNVector3(1.9, 1.9, 1.9); d.eulerAngles.y = .pi; d.position.y = 0.05
+        s.rootNode.addChildNode(d)
+        d.childNode(withName: "body", recursively: false)?.runAction(.repeatForever(.sequence([.scale(to: 1.04, duration: 1.0), .scale(to: 0.98, duration: 1.0)])))
+        d.runAction(.repeatForever(.sequence([.rotateTo(x: 0, y: .pi + 0.35, z: 0, duration: 2.5), .rotateTo(x: 0, y: .pi - 0.35, z: 0, duration: 2.5)])))
+        let sp = SCNParticleSystem(); sp.particleImage = FX.softDot; sp.birthRate = 20; sp.particleLifeSpan = 1.5; sp.particleSize = 0.12
+        sp.particleColor = UIColor(red: 1, green: 0.9, blue: 0.6, alpha: 1); sp.blendMode = .additive; sp.emitterShape = SCNSphere(radius: 1.6); sp.particleVelocity = 0.3
+        let spn = SCNNode(); spn.position = SCNVector3(0, 1.3, 0); spn.addParticleSystem(sp); s.rootNode.addChildNode(spn)
         return v
     }
     func updateUIView(_ uiView: SCNView, context: Context) {}
@@ -112,9 +220,60 @@ struct SettingsView: View {
     private func commit() { p.setVolumes(bgm: bgm, sfx: sfx, haptics: haptics) }
 }
 
+// MARK: - 図鑑（属性ごとの進化ライン、未発見はシルエット）
+struct CollectionView: View {
+    var onClose: () -> Void
+    @ObservedObject var progress = Progress.shared
+    let lines: [Element] = [.fire, .ice, .thunder, .none]
+    var discoveredCount: Int { lines.flatMap { e in (0..<4).map { "\(e.rawValue)-\($0)" } }.filter { progress.data.discovered.contains($0) }.count }
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.25, green: 0.2, blue: 0.55), Color(red: 0.1, green: 0.12, blue: 0.3)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            VStack(spacing: 12) {
+                HStack {
+                    CircleIcon(icon: "chevron.left", action: onClose)
+                    Spacer()
+                    VStack(spacing: 0) {
+                        Text("生物図鑑").font(DS.font(26, .black)).foregroundStyle(.white)
+                        Text("\(discoveredCount) / \(lines.count * 4) 発見").font(DS.font(13, .bold)).foregroundStyle(DS.gold)
+                    }
+                    Spacer()
+                    Color.clear.frame(width: 50, height: 50)
+                }.padding(.horizontal, 16)
+                ScrollView {
+                    VStack(spacing: 12) { ForEach(lines, id: \.self) { e in row(e) } }.padding(12)
+                }
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 26))
+                .overlay(RoundedRectangle(cornerRadius: 26).stroke(LinearGradient(colors: [DS.gold, DS.goldDeep], startPoint: .top, endPoint: .bottom), lineWidth: 4))
+                .padding(.horizontal, 10)
+            }
+        }
+    }
+    func row(_ e: Element) -> some View {
+        let c = Color(Palette.color(e))
+        return HStack(spacing: 2) {
+            Text(e == .none ? "🦠" : (e == .fire ? "🔥" : e == .ice ? "❄️" : "⚡️")).font(.system(size: 20))
+                .frame(width: 38, height: 38).background(c, in: Circle()).overlay(Circle().stroke(DS.gold, lineWidth: 3))
+            ForEach(0..<4) { k in
+                let found = progress.data.discovered.contains("\(e.rawValue)-\(k)")
+                VStack(spacing: 0) {
+                    Thumb(e: e, k: k, size: 64, locked: !found)
+                    HStack(spacing: 0) { ForEach(0..<(k + 1), id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(DS.gold) } }
+                    Text(found ? CreatureCatalog.name(element: e, sizeClass: k) : "???").font(DS.font(8, .bold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
+                }.frame(maxWidth: .infinity)
+                if k < 3 { Image(systemName: "arrowtriangle.right.fill").font(.system(size: 9)).foregroundStyle(.white.opacity(0.7)) }
+            }
+        }
+        .padding(8)
+        .background(LinearGradient(colors: [c.opacity(0.55), c.opacity(0.2)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.5), lineWidth: 2))
+    }
+}
+
 // MARK: - ゲーム画面
 struct GameScreen: View {
     @StateObject private var game: GameController
+    @ObservedObject var progress = Progress.shared
     var onExit: (Int?) -> Void
     init(stageIndex: Int, onExit: @escaping (Int?) -> Void) {
         _game = StateObject(wrappedValue: GameController(stageIndex: stageIndex)); self.onExit = onExit
@@ -122,35 +281,47 @@ struct GameScreen: View {
     var body: some View {
         ZStack {
             SceneHost(view: game.view).ignoresSafeArea()
-            VStack {
-                HStack(spacing: 10) {
-                    CircleButton(icon: "house.fill") { game.stop(); onExit(nil) }
-                    VStack(spacing: 4) {
-                        Text("STAGE \(game.stage.index)").font(DS.font(16)).foregroundStyle(.white)
-                        ProgressBar(value: game.progress, color: DS.good)
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 6).background(DS.navy.opacity(0.75), in: Capsule())
+            VStack(spacing: 8) {
+                HStack(alignment: .top) {
+                    CircleIcon(icon: "house.fill") { game.stop(); onExit(nil) }
                     Spacer()
-                }.padding(.horizontal, 16).padding(.top, 6)
-                if game.phase == .boss || game.phase == .won {
                     VStack(spacing: 4) {
-                        Text("\(game.stage.boss.name)  弱点 \(game.stage.boss.weakness.symbol)").font(DS.font(15)).foregroundStyle(.white)
-                        ProgressBar(value: Float(game.bossHP), color: Color(red: 1, green: 0.3, blue: 0.45)).frame(width: 240)
-                    }.padding(10).background(DS.navy.opacity(0.75), in: RoundedRectangle(cornerRadius: 16)).transition(.scale)
-                }
+                        Text("STAGE \(game.stage.index)").font(DS.font(18, .black)).foregroundStyle(.white)
+                            .padding(.horizontal, 18).padding(.vertical, 3).background(DS.navy.opacity(0.85), in: Capsule())
+                        StageDots(progress: game.progress)
+                    }
+                    Spacer()
+                    GemCounter(value: progress.data.dna + game.dnaCollected).scaleEffect(0.85)
+                }.padding(.horizontal, 12).padding(.top, 4)
+                HStack(alignment: .top) {
+                    EvolutionPanel(element: game.element, sizeClass: game.sizeClass)
+                    Spacer()
+                    if game.phase == .boss || game.phase == .won {
+                        VStack(spacing: 4) {
+                            Text("\(game.stage.boss.name)  弱点 \(game.stage.boss.weakness.symbol)").font(DS.font(14)).foregroundStyle(.white)
+                            ProgressBar(value: Float(game.bossHP), color: Color(red: 1, green: 0.3, blue: 0.45)).frame(width: 180)
+                        }.padding(10).background(DS.navy.opacity(0.8), in: RoundedRectangle(cornerRadius: 16)).transition(.scale)
+                    }
+                }.padding(.horizontal, 12)
+                Spacer()
+            }
+            VStack {
                 Spacer()
                 ZStack {
                     ForEach(game.popups) { p in
-                        Text(p.text).font(DS.font(44, .black)).foregroundStyle(p.color)
-                            .shadow(color: .black.opacity(0.5), radius: 0, x: 0, y: 3).transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .move(edge: .top).combined(with: .opacity)))
+                        Text(p.text).font(DS.font(46, .black)).foregroundStyle(p.color)
+                            .shadow(color: .black.opacity(0.45), radius: 0, x: 0, y: 3)
+                            .transition(.asymmetric(insertion: .scale(scale: 0.3).combined(with: .opacity), removal: .move(edge: .top).combined(with: .opacity)))
                     }
                 }.animation(.spring(response: 0.3, dampingFraction: 0.55), value: game.popups.map(\.id))
                 if let n = game.evolvedName {
                     VStack(spacing: 0) {
+                        Thumb(e: game.element, k: game.sizeClass, size: 80)
                         Text("EVOLUTION!").font(DS.font(20, .black)).foregroundStyle(DS.gold)
-                        Text(n).font(DS.font(34, .black)).foregroundStyle(.white)
-                    }.padding(.horizontal, 24).padding(.vertical, 10)
-                    .background(LinearGradient(colors: [DS.violet, DS.navy], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 22))
+                        Text(n).font(DS.font(24, .black)).foregroundStyle(.white)
+                    }.padding(.horizontal, 20).padding(.vertical, 8)
+                    .background(LinearGradient(colors: [DS.violet, DS.navy], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 26))
+                    .overlay(RoundedRectangle(cornerRadius: 26).stroke(DS.gold, lineWidth: 4))
                     .transition(.scale.combined(with: .opacity))
                 }
                 Spacer()
@@ -158,25 +329,54 @@ struct GameScreen: View {
                     VStack(spacing: 8) {
                         Image(systemName: "hand.draw.fill").font(.system(size: 44)).foregroundStyle(.white)
                         Text("左右にスワイプしてスタート").font(DS.font(20)).foregroundStyle(.white)
-                    }.shadow(radius: 4).padding(.bottom, 80)
+                    }.shadow(color: .black.opacity(0.4), radius: 3).padding(.bottom, 90)
                 }
-                if game.abilityReady {
+                HStack {
+                    Spacer()
                     Button { game.useAbility() } label: {
-                        VStack { Image(systemName: "sparkles").font(.system(size: 34, weight: .bold)); Text("DNA BURST").font(DS.font(13)) }
-                            .foregroundStyle(.white).frame(width: 110, height: 110)
-                            .background(RadialGradient(colors: [DS.violet, DS.navy], center: .center, startRadius: 5, endRadius: 60), in: Circle())
-                            .overlay(Circle().stroke(DS.gold, lineWidth: 5))
-                    }.padding(.bottom, 40).transition(.scale)
+                        ZStack {
+                            Circle().fill(RadialGradient(colors: [Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.2, green: 0.1, blue: 0.45)], center: .center, startRadius: 4, endRadius: 60))
+                            Text("🧬").font(.system(size: 50)).rotationEffect(.degrees(-20))
+                        }
+                        .frame(width: 104, height: 104)
+                        .overlay(Circle().stroke(LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.6), DS.goldDeep], startPoint: .top, endPoint: .bottom), lineWidth: 7))
+                        .shadow(color: DS.gold.opacity(game.abilityReady ? 0.9 : 0), radius: 14)
+                        .opacity(game.abilityReady ? 1 : 0.6)
+                    }
+                    .disabled(!game.abilityReady)
+                    .padding(.trailing, 20).padding(.bottom, 30)
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: game.phase)
             .animation(.spring(response: 0.35, dampingFraction: 0.6), value: game.evolvedName)
             if game.phase == .won || game.phase == .lost { ResultCard(game: game, onExit: onExit).transition(.scale.combined(with: .opacity)) }
         }
         .contentShape(Rectangle())
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in game.drag(dx: v.translation.width, width: UIScreen.main.bounds.width) }.onEnded { _ in game.endDrag() })
-        .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(game.phase == .won ? 1.2 : 0.3), value: game.phase)
+        .animation(.spring(response: 0.45, dampingFraction: 0.75).delay(game.phase == .won ? 1.0 : 0.3), value: game.phase)
         .onDisappear { game.stop() }
+    }
+}
+
+/// 画面左の進化段階パネル（現在の系統の 3 段階）
+struct EvolutionPanel: View {
+    let element: Element; let sizeClass: Int
+    var body: some View {
+        let e = element == .none ? Element.fire : element
+        VStack(spacing: 2) {
+            ForEach(0..<3) { k in
+                let current = element != .none && k == min(sizeClass, 2)
+                let unlocked = element != .none && k <= sizeClass
+                Thumb(e: e, k: k, size: 54, locked: !unlocked)
+                    .frame(width: 62, height: 62)
+                    .background(Circle().fill(LinearGradient(colors: [Color(red: 0.85, green: 0.95, blue: 1), Color(red: 0.5, green: 0.75, blue: 1)], startPoint: .top, endPoint: .bottom)))
+                    .overlay(Circle().stroke(current ? DS.gold : .white.opacity(0.7), lineWidth: current ? 4 : 2))
+                    .shadow(color: current ? DS.gold : .clear, radius: 8)
+                if k < 2 { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 10)).foregroundStyle(.white) }
+            }
+        }
+        .padding(6)
+        .background(DS.navy.opacity(0.85), in: Capsule())
+        .overlay(Capsule().stroke(Color(red: 0.4, green: 0.7, blue: 1), lineWidth: 2))
     }
 }
 
@@ -186,23 +386,29 @@ struct ResultCard: View {
     var body: some View {
         let won = game.phase == .won
         VStack(spacing: 14) {
-            Text(won ? "STAGE CLEAR!" : "GAME OVER").font(DS.font(36, .black)).foregroundStyle(won ? DS.gold : .white)
             if won {
-                HStack(spacing: 6) { ForEach(0..<3) { _ in Image(systemName: "star.fill").font(.system(size: 40)).foregroundStyle(DS.gold) } }
-                Text("+\(20 + game.stage.index * 5) DNA").font(DS.font(24)).foregroundStyle(.white)
+                VStack(spacing: -10) {
+                    Text("👑").font(.system(size: 56))
+                    Text("BOSS CLEAR!").font(DS.font(42, .black)).italic()
+                        .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.6), DS.goldDeep], startPoint: .top, endPoint: .bottom))
+                        .shadow(color: Color(red: 0.4, green: 0.15, blue: 0.05), radius: 0, x: 0, y: 4)
+                }
+                HStack(spacing: 6) { ForEach(0..<3) { _ in Image(systemName: "star.fill").font(.system(size: 40)).foregroundStyle(DS.gold).shadow(color: .orange, radius: 6) } }
+                HStack { Text("💎"); Text("+\(20 + game.stage.index * 5 + game.dnaCollected)").font(DS.font(26)).foregroundStyle(.white) }
+                if game.element != .none { Thumb(e: game.element, k: game.sizeClass, size: 100) }
             } else {
+                Text("GAME OVER").font(DS.font(38, .black)).foregroundStyle(.white)
                 Text(String(localized: "ボスの弱点属性で進化するか、\n融合で強い個体を作ろう")).font(DS.font(16, .bold)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
             }
             Button { onExit(won ? game.stage.index + 1 : game.stage.index) } label: {
-                Text(won ? "NEXT" : "RETRY").font(DS.font(26, .black)).foregroundStyle(.white).frame(width: 200, height: 64)
-                    .background(DS.good, in: RoundedRectangle(cornerRadius: 22))
-            }
+                Text(won ? "NEXT" : "RETRY").font(DS.font(28, .black)).foregroundStyle(.white).frame(width: 210, height: 66)
+            }.buttonStyle(GameButtonStyle(top: Color(red: 0.55, green: 0.98, blue: 0.3), bottom: Color(red: 0.15, green: 0.72, blue: 0.15), radius: 33))
             Button("ホーム") { onExit(nil) }.font(DS.font(16, .bold)).foregroundStyle(.white.opacity(0.85))
         }
+        .padding(26)
+        .background(LinearGradient(colors: [Color(red: 0.35, green: 0.2, blue: 0.7).opacity(0.96), DS.navy.opacity(0.96)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 32))
+        .overlay(RoundedRectangle(cornerRadius: 32).stroke(LinearGradient(colors: [DS.gold, DS.goldDeep], startPoint: .top, endPoint: .bottom), lineWidth: 4))
         .padding(28)
-        .background(LinearGradient(colors: [DS.navy.opacity(0.95), Color(red: 0.2, green: 0.15, blue: 0.5).opacity(0.95)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 32))
-        .overlay(RoundedRectangle(cornerRadius: 32).stroke(.white.opacity(0.3), lineWidth: 2))
-        .padding(30)
     }
 }
 
@@ -220,24 +426,6 @@ struct ProgressBar: View {
                 Capsule().fill(.white.opacity(0.25))
                 Capsule().fill(color).frame(width: max(8, g.size.width * CGFloat(value)))
             }
-        }.frame(height: 10).frame(minWidth: 160)
-    }
-}
-
-struct CircleButton: View {
-    let icon: String; let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
-                .frame(width: 50, height: 50).background(Color(red: 0.2, green: 0.45, blue: 0.95), in: Circle())
-                .overlay(Circle().stroke(.white, lineWidth: 3))
-        }
-    }
-}
-
-struct Pill<C: View>: View {
-    @ViewBuilder var content: C
-    var body: some View {
-        HStack(spacing: 6) { content }.foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 8).background(DS.navy.opacity(0.8), in: Capsule())
+        }.frame(height: 10)
     }
 }
