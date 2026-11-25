@@ -13,9 +13,10 @@ struct ShopView: View {
                 if shop.s.noAds { Label("広告なし", systemImage: "nosign").foregroundStyle(.green) }
             }.font(DS.font(15, .bold)).frame(maxWidth: .infinity, alignment: .leading)
 
+            guide
             header("💎 DNAで買う")
             ForEach(DNAItem.all) { i in
-                row(icon: i.icon, color: .pink, title: i.title, detail: i.detail, tag: nil) {
+                row(icon: i.icon, color: .pink, title: i.title, detail: i.detail, use: i.use, tag: nil) {
                     Button {
                         if shop.buy(i) { AudioEngine.shared.play("gate_big"); Haptics.shared.tap(0.8) } else { note = "DNAが足りません" }
                     } label: { Text("💎 \(i.cost)").font(DS.font(15, .black)).frame(width: 96, height: 40) }
@@ -26,7 +27,7 @@ struct ShopView: View {
 
             header("🛒 スペシャル")
             ForEach(IAPItem.all) { i in
-                row(icon: i.icon, color: i.consumable ? .orange : .purple, title: i.title, detail: i.detail, tag: i.tag) {
+                row(icon: i.icon, color: i.consumable ? .orange : .purple, title: i.title, detail: i.detail, use: i.use, tag: i.tag) {
                     if shop.owned(i) {
                         Text("購入済み").font(DS.font(14, .bold)).foregroundStyle(.white.opacity(0.7)).frame(width: 96)
                     } else {
@@ -47,10 +48,22 @@ struct ShopView: View {
             Button("OK") {}
         } message: { Text(note ?? shop.message ?? "") }
     }
+    private var guide: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("ショップのつかいかた").font(DS.font(15, .black)).foregroundStyle(DS.gold)
+            Text("💎 DNA … ステージで集まるお金。「強化」で仲間を強くしたり、下のアイテムと交換できます").font(DS.font(12, .bold))
+            Text("❤️ 復活チケット … 負けたとき、広告なしでその場から続けられます").font(DS.font(12, .bold))
+            Text("👥 仲間2倍チケット … 次のステージを仲間2倍の状態でスタートできます").font(DS.font(12, .bold))
+            Text("✨ 金色キャラ … レアな仲間。図鑑に登録されます").font(DS.font(12, .bold))
+        }
+        .foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12).background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 16))
+    }
     private func header(_ t: String) -> some View {
         Text(t).font(DS.font(18, .black)).foregroundStyle(DS.gold).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
     }
-    private func row<B: View>(icon: String, color: Color, title: String, detail: String, tag: String?, @ViewBuilder button: () -> B) -> some View {
+    private func row<B: View>(icon: String, color: Color, title: String, detail: String, use: String, tag: String?, @ViewBuilder button: () -> B) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.system(size: 26, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 54, height: 54).background(LinearGradient(colors: [color, color.opacity(0.6)], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 14))
@@ -60,6 +73,9 @@ struct ShopView: View {
                     if let tag { Text(tag).font(DS.font(11, .black)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Color.red, in: Capsule()) }
                 }
                 Text(detail).font(DS.font(12, .medium)).foregroundStyle(.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+                if !use.isEmpty {
+                    Text("💡 " + use).font(DS.font(11, .bold)).foregroundStyle(Color(red: 0.6, green: 0.95, blue: 1)).fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 4)
             button()

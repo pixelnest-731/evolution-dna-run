@@ -19,7 +19,7 @@ struct MapView: View {
     }
     static let finalStage = 60
     private var worldsTotal: Int { max(Self.finalStage / World.size, World.of(current) + 2) }
-    static let goalH: CGFloat = 980
+    static let goalH: CGFloat = 1220
     private var remaining: Int { max(0, Self.finalStage - current + 1) }
 
     /// スクロール内容全体での座標
@@ -778,6 +778,25 @@ private struct GoalBlock: View {
                     ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: s, height: s)), with: .color(.white.opacity(0.35 + Double(r.next()) * 0.6)))
                 }
             }
+            // オーロラ
+            ForEach(0..<3, id: \.self) { k in
+                Ellipse().fill(LinearGradient(colors: [[Color.green, .cyan, .purple][k].opacity(0.35), .clear], startPoint: .top, endPoint: .bottom))
+                    .frame(width: W * 1.4, height: 140).rotationEffect(.degrees([-8.0, 6, -3][k]))
+                    .position(x: W / 2 + (anim ? 30 : -30) * (k % 2 == 0 ? 1 : -1), y: 70 + CGFloat(k) * 40)
+                    .blur(radius: 18)
+                    .animation(.easeInOut(duration: 5 + Double(k)).repeatForever(autoreverses: true), value: anim)
+            }
+            // きらめく星
+            ForEach(0..<14, id: \.self) { i in
+                var r = SeededRNG(500 + i)
+                let x = r.next() * W, y = 20 + r.next() * 600
+                Image(systemName: "sparkle").font(.system(size: 10 + r.next() * 14, weight: .bold)).foregroundStyle(.white)
+                    .shadow(color: .yellow, radius: 4)
+                    .opacity(anim ? (i % 2 == 0 ? 1 : 0.15) : (i % 2 == 0 ? 0.15 : 1))
+                    .scaleEffect(anim ? (i % 2 == 0 ? 1.2 : 0.6) : (i % 2 == 0 ? 0.6 : 1.2))
+                    .animation(.easeInOut(duration: 0.9 + Double(i % 4) * 0.3).repeatForever(autoreverses: true), value: anim)
+                    .position(x: x, y: y)
+            }
             // 後光
             ZStack {
                 ForEach(0..<14, id: \.self) { i in
@@ -787,13 +806,26 @@ private struct GoalBlock: View {
             }
             .rotationEffect(.degrees(anim ? 360 : 0))
             .animation(.linear(duration: 60).repeatForever(autoreverses: false), value: anim)
-            .position(x: W / 2, y: 360)
+            .position(x: W / 2, y: 640)
             Circle().fill(RadialGradient(colors: [Color(red: 1, green: 0.95, blue: 0.7), Color(red: 1, green: 0.7, blue: 0.3).opacity(0.5), .clear], center: .center, startRadius: 10, endRadius: 230))
-                .frame(width: 460, height: 460).position(x: W / 2, y: 360)
-            temple.position(x: W / 2, y: 390)
+                .frame(width: 520, height: 520).position(x: W / 2, y: 640)
+            // 虹の橋
+            Circle().trim(from: 0.5, to: 1)
+                .stroke(AngularGradient(colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .red], center: .center), lineWidth: 16)
+                .frame(width: W * 1.15, height: W * 1.15).opacity(0.45).blur(radius: 2)
+                .position(x: W / 2, y: 820)
+            orbit.position(x: W / 2, y: 720).zIndex(0)
+            temple.position(x: W / 2, y: 660)
+            // 守護ドラゴン（左右）
+            ForEach(0..<2, id: \.self) { k in
+                Text("🐉").font(.system(size: 52)).scaleEffect(x: k == 0 ? 1 : -1, y: 1)
+                    .shadow(color: .orange, radius: 8)
+                    .position(x: k == 0 ? W * 0.13 : W * 0.87, y: 560 + (anim ? -10 : 10))
+                    .animation(.easeInOut(duration: 1.8 + Double(k) * 0.3).repeatForever(autoreverses: true), value: anim)
+            }
             // 遠くに浮かぶ島々
             ForEach(0..<5, id: \.self) { i in
-                let x = [0.12, 0.88, 0.2, 0.82, 0.5][i] * W, y: CGFloat = [520, 560, 690, 720, 120][i]
+                let x = [0.12, 0.88, 0.2, 0.82, 0.5][i] * W, y: CGFloat = [380, 420, 960, 990, 300][i]
                 island(scale: [0.9, 0.8, 0.6, 0.65, 0.4][i])
                     .position(x: x, y: y + (anim ? -6 : 6))
                     .animation(.easeInOut(duration: 2.5 + Double(i) * 0.4).repeatForever(autoreverses: true), value: anim)
@@ -808,7 +840,7 @@ private struct GoalBlock: View {
             }
             // 雲の中へ消えていく光の道（ここから先はまだ見えない）
             Path { p in
-                p.move(to: CGPoint(x: W / 2, y: H)); p.addCurve(to: CGPoint(x: W / 2, y: 520), control1: CGPoint(x: W * 0.15, y: H - 220), control2: CGPoint(x: W * 0.85, y: 700))
+                p.move(to: CGPoint(x: W / 2, y: H)); p.addCurve(to: CGPoint(x: W / 2, y: 960), control1: CGPoint(x: W * 0.15, y: H - 120), control2: CGPoint(x: W * 0.85, y: 1050))
             }
             .stroke(style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: [2, 22]))
             .foregroundStyle(Color(red: 1, green: 0.95, blue: 0.6).opacity(0.9))
@@ -826,23 +858,92 @@ private struct GoalBlock: View {
         .allowsHitTesting(false)
     }
 
+    private var gold: LinearGradient { LinearGradient(colors: [Color(red: 1, green: 0.97, blue: 0.7), Color(red: 1, green: 0.8, blue: 0.3), Color(red: 0.8, green: 0.5, blue: 0.12)], startPoint: .top, endPoint: .bottom) }
+    private var marble: LinearGradient { LinearGradient(colors: [.white, Color(red: 0.92, green: 0.85, blue: 1), Color(red: 0.75, green: 0.65, blue: 0.9)], startPoint: .leading, endPoint: .trailing) }
+
+    // 三層の黄金神殿＋左右の塔＋宝石
     private var temple: some View {
-        let gold = LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.65), Color(red: 0.85, green: 0.55, blue: 0.15)], startPoint: .top, endPoint: .bottom)
-        return VStack(spacing: 0) {
-            Image(systemName: "crown.fill").font(.system(size: 46, weight: .black)).foregroundStyle(gold).shadow(color: .yellow, radius: 12)
-            Triangle().fill(gold).frame(width: 230, height: 70)
-            Rectangle().fill(Color(red: 0.95, green: 0.8, blue: 0.4)).frame(width: 240, height: 12)
-            HStack(spacing: 18) {
-                ForEach(0..<6, id: \.self) { _ in
-                    Rectangle().fill(LinearGradient(colors: [.white, Color(red: 0.9, green: 0.8, blue: 0.95)], startPoint: .leading, endPoint: .trailing)).frame(width: 16, height: 110)
+        HStack(alignment: .bottom, spacing: -8) {
+            tower(h: 150).offset(y: -28)
+            VStack(spacing: 0) {
+                ZStack {
+                    Image(systemName: "crown.fill").font(.system(size: 58, weight: .black)).foregroundStyle(gold)
+                        .shadow(color: .yellow, radius: 16)
+                    HStack(spacing: 9) { gem(.red, 9); gem(.cyan, 11); gem(.green, 9) }.offset(y: 8)
+                }
+                .scaleEffect(anim ? 1.08 : 0.96)
+                .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: anim)
+                // 上層
+                Triangle().fill(gold).frame(width: 120, height: 40)
+                tier(width: 130, cols: 3, colH: 44)
+                // 中層
+                Triangle().fill(gold).frame(width: 190, height: 46).overlay { gem(.purple, 16).offset(y: 8) }
+                tier(width: 200, cols: 5, colH: 60)
+                // 下層（扉）
+                Triangle().fill(gold).frame(width: 250, height: 56).overlay { Image(systemName: "sparkles").font(.system(size: 22, weight: .bold)).foregroundStyle(.white).offset(y: 10) }
+                Rectangle().fill(gold).frame(width: 260, height: 12)
+                HStack(spacing: 16) { ForEach(0..<7, id: \.self) { _ in Rectangle().fill(marble).frame(width: 16, height: 110) } }
+                    .overlay { door }
+                ForEach(0..<4, id: \.self) { k in
+                    Rectangle().fill(k % 2 == 0 ? Color(red: 0.98, green: 0.85, blue: 0.45) : Color(red: 0.85, green: 0.62, blue: 0.3))
+                        .frame(width: 270 + CGFloat(k) * 22, height: 11)
                 }
             }
-            .overlay { Image(systemName: "questionmark").font(.system(size: 40, weight: .black)).foregroundStyle(.white.opacity(0.9)).shadow(color: .purple, radius: 8)
-                .frame(width: 60, height: 90).background(Color(red: 0.25, green: 0.05, blue: 0.4), in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30)) }
-            Rectangle().fill(Color(red: 0.95, green: 0.8, blue: 0.4)).frame(width: 260, height: 14)
-            Rectangle().fill(Color(red: 0.8, green: 0.6, blue: 0.3)).frame(width: 290, height: 14)
+            tower(h: 150).offset(y: -28)
         }
-        .shadow(color: Color(red: 1, green: 0.8, blue: 0.3).opacity(0.8), radius: 20)
+        .shadow(color: Color(red: 1, green: 0.8, blue: 0.3).opacity(0.9), radius: 24)
+    }
+
+    private func tier(width: CGFloat, cols: Int, colH: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(gold).frame(width: width, height: 9)
+            HStack(spacing: (width - CGFloat(cols) * 12) / CGFloat(cols)) { ForEach(0..<cols, id: \.self) { _ in Rectangle().fill(marble).frame(width: 12, height: colH) } }
+                .frame(width: width).background(Color(red: 0.3, green: 0.1, blue: 0.45).opacity(0.85))
+        }
+    }
+
+    private var door: some View {
+        ZStack {
+            UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34)
+                .fill(RadialGradient(colors: [Color(red: 0.75, green: 0.4, blue: 1), Color(red: 0.2, green: 0.02, blue: 0.35)], center: .center, startRadius: 2, endRadius: 60))
+            Image(systemName: "questionmark").font(.system(size: 42, weight: .black)).foregroundStyle(.white)
+                .shadow(color: .purple, radius: 10)
+                .opacity(anim ? 1 : 0.55)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: anim)
+        }
+        .frame(width: 68, height: 98)
+        .overlay(UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34).stroke(gold, lineWidth: 4))
+        .offset(y: 6)
+    }
+
+    private func tower(h: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Circle().fill(gold).frame(width: 14, height: 14).shadow(color: .yellow, radius: 8)
+            Triangle().fill(gold).frame(width: 40, height: 46)
+            Rectangle().fill(marble).frame(width: 30, height: h)
+                .overlay { VStack(spacing: 26) { gem(.cyan, 8); gem(.pink, 8); gem(.yellow, 8) } }
+            Rectangle().fill(gold).frame(width: 40, height: 10)
+        }
+    }
+
+    private func gem(_ c: Color, _ s: CGFloat) -> some View {
+        Image(systemName: "suit.diamond.fill").font(.system(size: s, weight: .black))
+            .foregroundStyle(LinearGradient(colors: [.white, c], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .shadow(color: c, radius: 4)
+    }
+
+    // ゴール周りを回るDNAの光の粒
+    private var orbit: some View {
+        ZStack {
+            ForEach(0..<12, id: \.self) { i in
+                let a = Double(i) / 12 * 2 * .pi
+                Circle().fill(i % 2 == 0 ? Color.cyan : Color.pink).frame(width: 9, height: 9)
+                    .shadow(color: i % 2 == 0 ? .cyan : .pink, radius: 6)
+                    .offset(x: cos(a) * 180, y: sin(a) * 60)
+            }
+        }
+        .rotationEffect(.degrees(anim ? 360 : 0))
+        .animation(.linear(duration: 14).repeatForever(autoreverses: false), value: anim)
     }
 
     private func island(scale s: CGFloat) -> some View {

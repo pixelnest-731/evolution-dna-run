@@ -18,25 +18,27 @@ struct IAPItem: Identifiable {
     let fallbackPrice: String
     let consumable: Bool
     var tag: String? = nil
+    var use: String = ""
     static let prefix = "com.pixelnest731.evolutiondnarun."
     static let all: [IAPItem] = [
-        IAPItem(id: prefix + "starter", title: "スターターパック", detail: "DNA 3,000 ＋ 金色キャラ2体 ＋ 復活チケット3枚（1回限り）", icon: "star.circle.fill", fallbackPrice: "¥300", consumable: false, tag: "お得"),
-        IAPItem(id: prefix + "noads", title: "広告削除", detail: "ステージ間の広告が出なくなります（報酬広告は自分で選んで見られます）", icon: "nosign", fallbackPrice: "¥600", consumable: false),
-        IAPItem(id: prefix + "dna_s", title: "DNA 500", detail: "少しだけ強化したいときに", icon: "sparkle", fallbackPrice: "¥160", consumable: true),
-        IAPItem(id: prefix + "dna_m", title: "DNA 1,800", detail: "＋20%おまけ", icon: "sparkles", fallbackPrice: "¥480", consumable: true, tag: "人気"),
-        IAPItem(id: prefix + "dna_l", title: "DNA 4,500", detail: "＋50%おまけ", icon: "diamond.fill", fallbackPrice: "¥980", consumable: true),
-        IAPItem(id: prefix + "dna_xl", title: "DNA 12,000", detail: "＋100%おまけ", icon: "crown.fill", fallbackPrice: "¥2,000", consumable: true, tag: "最大"),
-        IAPItem(id: prefix + "gold", title: "金色キャラ確定ボックス", detail: "金色キャラ1体確定 ＋ DNA 300", icon: "seal.fill", fallbackPrice: "¥250", consumable: true),
+        IAPItem(id: prefix + "starter", title: "スターターパック", detail: "DNA 3,000 ＋ 金色キャラ2体 ＋ 復活チケット3枚（1回限り）", icon: "star.circle.fill", fallbackPrice: "¥300", consumable: false, tag: "お得", use: "はじめての人向け。大量DNAで強化が進み、レアな金色キャラも図鑑に入ります"),
+        IAPItem(id: prefix + "noads", title: "広告削除", detail: "ステージ間の広告が出なくなります（報酬広告は自分で選んで見られます）", icon: "nosign", fallbackPrice: "¥600", consumable: false, use: "クリア後などに自動で流れる広告がなくなり、テンポよく遊べます。一度買えばずっと有効"),
+        IAPItem(id: prefix + "dna_s", title: "DNA 500", detail: "少しだけ強化したいときに", icon: "sparkle", fallbackPrice: "¥160", consumable: true, use: "DNAは「強化」で仲間の数・パワーを上げたり、復活チケットを買うのに使います"),
+        IAPItem(id: prefix + "dna_m", title: "DNA 1,800", detail: "＋20%おまけ", icon: "sparkles", fallbackPrice: "¥480", consumable: true, tag: "人気", use: "強化を数段階まとめて上げられる量。ボスで詰まったときに"),
+        IAPItem(id: prefix + "dna_l", title: "DNA 4,500", detail: "＋50%おまけ", icon: "diamond.fill", fallbackPrice: "¥980", consumable: true, use: "強化をしっかり進めて、先のワールドまで一気に進みたい人に"),
+        IAPItem(id: prefix + "dna_xl", title: "DNA 12,000", detail: "＋100%おまけ", icon: "crown.fill", fallbackPrice: "¥2,000", consumable: true, tag: "最大", use: "いちばんお得。強化を大きく進めてゴールの神殿を目指せます"),
+        IAPItem(id: prefix + "gold", title: "金色キャラ確定ボックス", detail: "金色キャラ1体確定 ＋ DNA 300", icon: "seal.fill", fallbackPrice: "¥250", consumable: true, use: "金色キャラは図鑑に加わるレアな仲間。集めるほど図鑑がうまります"),
     ]
 }
 
 /// DNAで買えるアイテム
 struct DNAItem: Identifiable {
     let id: String, title: String, detail: String, icon: String, cost: Int
+    var use: String = ""
     static let all: [DNAItem] = [
-        DNAItem(id: "revive", title: "復活チケット", detail: "負けた時に広告なしで復活", icon: "heart.fill", cost: 250),
-        DNAItem(id: "start", title: "仲間2倍チケット", detail: "次のステージを仲間2倍でスタート", icon: "person.3.fill", cost: 120),
-        DNAItem(id: "revive5", title: "復活チケット ×5", detail: "まとめ買いで20%お得", icon: "heart.circle.fill", cost: 1000),
+        DNAItem(id: "revive", title: "復活チケット", detail: "負けた時に広告なしで復活", icon: "heart.fill", cost: 250, use: "ステージで負けても、その場から続きをプレイできます"),
+        DNAItem(id: "start", title: "仲間2倍チケット", detail: "次のステージを仲間2倍でスタート", icon: "person.3.fill", cost: 120, use: "スタート時の仲間が2倍。ボス戦や苦手なステージの前に使うと効果大"),
+        DNAItem(id: "revive5", title: "復活チケット ×5", detail: "まとめ買いで20%お得", icon: "heart.circle.fill", cost: 1000, use: "1枚あたり200 DNA。よく負けるステージがあるならこちら"),
     ]
 }
 
