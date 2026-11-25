@@ -71,6 +71,7 @@ final class GameController: NSObject, ObservableObject {
         var mult = RunBoost.startMultiplier
         if mult == 1 && RunBoost.bossRush == nil && Shop.shared.useStartTicket() { mult = 2 }
         swarm.count = Meta.shared.startCount * mult
+        if let p = Shop.shared.partner { swarm.element = p }   // 相棒（シークレット／ユニーク）で出発
         if mult > 1 { startBoosted = true }
         RunBoost.startMultiplier = 1
         displayCount = swarm.count

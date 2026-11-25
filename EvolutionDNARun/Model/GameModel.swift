@@ -4,6 +4,12 @@ import Foundation
 
 enum Element: String, Codable, CaseIterable {
     case none, fire, ice, thunder, poison, water, plant, rock, dark, light, cosmic
+    /// 3Dモデルで描くキャラ（水・植物・闇・シークレット宇宙・ユニーク光）
+    static let hero3D: Set<Element> = [.water, .plant, .dark, .cosmic, .light]
+    /// 進化ゲートに出る属性（通常）
+    static let playable: [Element] = [.fire, .ice, .thunder, .water, .plant, .dark]
+    /// 相棒専用（ゲートでは変わらない特別キャラ）
+    var isSpecial: Bool { self == .cosmic || self == .light }
 
     var displayName: String {
         switch self {
@@ -94,12 +100,12 @@ struct Swarm: Equatable {
     var sizeClass: Int = 0
 
     static let classPower: [Double] = [1, 12, 150, 1900]   // 融合10体→1体で戦闘力×12（＞×10）
-    var unitPower: Double { Swarm.classPower[min(sizeClass, 3)] * (element == .none ? 1 : 1.5) }
+    var unitPower: Double { Swarm.classPower[min(sizeClass, 3)] * (element == .none ? 1 : element == .cosmic ? 2.0 : element == .light ? 1.8 : 1.5) }
 
     func power(against boss: BossDef) -> Double {
         var p = Double(count) * unitPower
         if element != .none && element == boss.weakness { p *= 2 }
-        if element != .none && element == boss.resist { p *= 0.5 }
+        if element != .none && !element.isSpecial && element == boss.resist { p *= 0.5 }
         return p
     }
 
@@ -109,7 +115,7 @@ struct Swarm: Equatable {
         case .sub(let n): count -= n
         case .mul(let n): count *= n
         case .div(let n): count /= n
-        case .evolve(let e): element = e
+        case .evolve(let e): if !element.isSpecial { element = e }
         case .fuse:
             if count >= 10 && sizeClass < 3 { count /= 10; sizeClass += 1 }
         }
@@ -161,7 +167,7 @@ enum StageGenerator {
         for r in 0..<rowCount {
             var a: GateKind, b: GateKind
             if r == evoSlot || (r == rowCount / 2 + 1 && index >= 12) {
-                let others = [Element.fire, .ice, .thunder].filter { $0 != weak }
+                let others = (index >= 4 ? Element.playable : [Element.fire, .ice, .thunder]).filter { $0 != weak }
                 a = .evolve(weak); b = .evolve(others.randomElement(using: &rng)!)
             } else if (r == rowCount - 1 || r == rowCount / 2) && index >= 8 {
                 a = .fuse; b = .add(Int.random(in: 3...8, using: &rng) * 10)

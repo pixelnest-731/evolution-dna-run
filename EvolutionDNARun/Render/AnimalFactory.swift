@@ -40,6 +40,11 @@ enum AnimalFactory {
         case .fire: return dragon(sizeClass)
         case .ice: return bear(sizeClass)
         case .thunder: return bird(sizeClass)
+        case .water: return shark(sizeClass)
+        case .plant: return dino(sizeClass)
+        case .dark: return wolf(sizeClass)
+        case .cosmic: return mecha(sizeClass)
+        case .light: return holyDragon(sizeClass)
         default: return SCNNode()
         }
     }
@@ -225,6 +230,7 @@ enum Thumbnails {
 
     @MainActor
     static func image(_ e: Element, _ k: Int, size: CGFloat = 220) -> UIImage {
+        if Element.hero3D.contains(e) { return render3D(e, k, size: size) }
         return Art.image(Art.creature(e, k))
     }
     @MainActor
@@ -240,7 +246,7 @@ enum Thumbnails {
         let s = node.scale.x
         let h = (mx.y - mn.y) * s; let w = max(mx.x - mn.x, mx.z - mn.z) * s
         let cam = SCNNode(); cam.camera = SCNCamera(); cam.camera!.fieldOfView = 30
-        let d = max(h, w) * 2.3 + 0.5
+        let d = max(h, w) * (Element.hero3D.contains(e) ? 1.55 : 2.3) + (Element.hero3D.contains(e) ? 0.2 : 0.5)
         cam.position = SCNVector3(0, (mn.y + mx.y) / 2 * s + d * 0.15, d); cam.look(at: SCNVector3(0, (mn.y + mx.y) / 2 * s, 0))
         scene.rootNode.addChildNode(cam)
         let l = SCNNode(); l.light = SCNLight(); l.light!.type = .directional; l.light!.intensity = 1100; l.eulerAngles = SCNVector3(-0.7, 0.5, 0); scene.rootNode.addChildNode(l)

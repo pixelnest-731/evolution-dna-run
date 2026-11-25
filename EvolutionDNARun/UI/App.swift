@@ -341,7 +341,8 @@ struct SettingsView: View {
 struct CollectionView: View {
     var onClose: () -> Void
     @ObservedObject var progress = Progress.shared
-    let lines: [Element] = [.fire, .ice, .thunder, .none]
+    @ObservedObject var shop = Shop.shared
+    let lines: [Element] = Element.playable + [.none]
     var discoveredCount: Int { lines.flatMap { e in (0..<4).map { "\(e.rawValue)-\($0)" } }.filter { progress.data.discovered.contains($0) }.count }
     var body: some View {
         ZStack {
@@ -358,7 +359,10 @@ struct CollectionView: View {
                     Color.clear.frame(width: 50, height: 50)
                 }.padding(.horizontal, 16)
                 ScrollView {
-                    VStack(spacing: 12) { ForEach(lines, id: \.self) { e in row(e) } }.padding(12)
+                    VStack(spacing: 12) {
+                        ForEach(lines, id: \.self) { e in row(e) }
+                        specials
+                    }.padding(12)
                 }
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 26))
                 .overlay(RoundedRectangle(cornerRadius: 26).stroke(LinearGradient(colors: [DS.gold, DS.goldDeep], startPoint: .top, endPoint: .bottom), lineWidth: 4))
@@ -366,10 +370,42 @@ struct CollectionView: View {
             }
         }
     }
+    static func emoji(_ e: Element) -> String {
+        switch e { case .fire: "🔥"; case .ice: "❄️"; case .thunder: "⚡️"; case .water: "🌊"; case .plant: "🦖"; case .dark: "🌙"; case .cosmic: "🤖"; case .light: "🗡️"; default: "🦠" }
+    }
+    // シークレット・ユニーク（相棒にできる特別キャラ）
+    var specials: some View {
+        VStack(spacing: 10) {
+            Text("★ 特別キャラ ★").font(DS.font(18, .black)).foregroundStyle(DS.gold).padding(.top, 6)
+            special(.cosmic, title: "シークレット", owned: shop.s.secret, how: "ショップ「スペシャル」で入手", k: 3)
+            special(.light, title: "ユニーク", owned: shop.s.unique, how: "ショップで 💎5,000 で入手", k: 2)
+        }
+    }
+    func special(_ e: Element, title: String, owned: Bool, how: String, k: Int) -> some View {
+        let isPartner = shop.partner == e
+        return HStack(spacing: 10) {
+            Thumb(e: e, k: k, size: 86, locked: !owned)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(DS.font(11, .black)).foregroundStyle(.white).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(e == .cosmic ? Color.purple : Color.orange, in: Capsule())
+                Text(owned ? CreatureCatalog.name(element: e, sizeClass: k) : "？？？").font(DS.font(16, .black)).foregroundStyle(.white)
+                Text(owned ? (e == .cosmic ? "パワー2倍・耐性無視" : "パワー1.8倍・耐性無視") : how).font(DS.font(11, .bold)).foregroundStyle(.white.opacity(0.8))
+            }
+            Spacer(minLength: 0)
+            if owned {
+                Button(isPartner ? "相棒中" : "相棒にする") { shop.setPartner(isPartner ? nil : e); Haptics.shared.tap(0.6) }
+                    .font(DS.font(13, .black)).foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(isPartner ? DS.good : DS.blue, in: Capsule())
+            }
+        }
+        .padding(10)
+        .background(LinearGradient(colors: e == .cosmic ? [Color.purple.opacity(0.7), Color.blue.opacity(0.4)] : [Color.orange.opacity(0.6), Color.yellow.opacity(0.3)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(DS.gold, lineWidth: 3))
+    }
     func row(_ e: Element) -> some View {
         let c = Color(Palette.color(e))
         return HStack(spacing: 2) {
-            Text(e == .none ? "🦠" : (e == .fire ? "🔥" : e == .ice ? "❄️" : "⚡️")).font(.system(size: 20))
+            Text(Self.emoji(e)).font(.system(size: 20))
                 .frame(width: 38, height: 38).background(c, in: Circle()).overlay(Circle().stroke(DS.gold, lineWidth: 3))
             ForEach(0..<4) { k in
                 let found = progress.data.discovered.contains("\(e.rawValue)-\(k)")

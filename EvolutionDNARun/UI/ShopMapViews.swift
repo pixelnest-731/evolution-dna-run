@@ -16,12 +16,14 @@ struct ShopView: View {
             guide
             header("💎 DNAで買う")
             ForEach(DNAItem.all) { i in
-                row(icon: i.icon, color: .pink, title: i.title, detail: i.detail, use: i.use, tag: nil) {
+                row(icon: i.icon, color: i.id == "unique" ? .yellow : .pink, title: i.title, detail: i.detail, use: i.use, tag: i.id == "unique" ? "ユニーク" : nil) {
+                    if shop.ownedDNA(i) { Text("入手済み").font(DS.font(14, .bold)).foregroundStyle(.white.opacity(0.7)).frame(width: 96) } else {
                     Button {
                         if shop.buy(i) { AudioEngine.shared.play("gate_big"); Haptics.shared.tap(0.8) } else { note = "DNAが足りません" }
                     } label: { Text("💎 \(i.cost)").font(DS.font(15, .black)).frame(width: 96, height: 40) }
                     .buttonStyle(GameButtonStyle(top: Color(red: 0.45, green: 0.7, blue: 1), bottom: DS.blue, radius: 20))
                     .opacity(progress.data.dna >= i.cost ? 1 : 0.5)
+                    }
                 }
             }
 
@@ -55,6 +57,7 @@ struct ShopView: View {
             Text("❤️ 復活チケット … 負けたとき、広告なしでその場から続けられます").font(DS.font(12, .bold))
             Text("👥 仲間2倍チケット … 次のステージを仲間2倍の状態でスタートできます").font(DS.font(12, .bold))
             Text("✨ 金色キャラ … レアな仲間。図鑑に登録されます").font(DS.font(12, .bold))
+            Text("🤖 シークレット／🗡️ ユニーク … 図鑑で「相棒」にすると、そのキャラでステージに出発します").font(DS.font(12, .bold))
         }
         .foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
