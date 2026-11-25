@@ -7,20 +7,6 @@ struct ShopState: Codable {
     var startTickets = 0
     var noAds = false
     var starterBought = false
-    var secret = false        // シークレット：ギャラクシー・メカドラゴン（課金）
-    var unique = false        // ユニーク：聖剣ドラゴン（DNA）
-    var partner: String?      // 相棒（"cosmic" / "light"）。nil なら通常スタート
-    init() {}
-    init(from d: Decoder) throws {
-        let c = try d.container(keyedBy: CodingKeys.self)
-        reviveTickets = try c.decodeIfPresent(Int.self, forKey: .reviveTickets) ?? 0
-        startTickets = try c.decodeIfPresent(Int.self, forKey: .startTickets) ?? 0
-        noAds = try c.decodeIfPresent(Bool.self, forKey: .noAds) ?? false
-        starterBought = try c.decodeIfPresent(Bool.self, forKey: .starterBought) ?? false
-        secret = try c.decodeIfPresent(Bool.self, forKey: .secret) ?? false
-        unique = try c.decodeIfPresent(Bool.self, forKey: .unique) ?? false
-        partner = try c.decodeIfPresent(String.self, forKey: .partner)
-    }
 }
 
 /// 課金アイテム定義。本番は App Store Connect に同じIDで登録が必要（オーナー承認事項）
@@ -41,7 +27,6 @@ struct IAPItem: Identifiable {
         IAPItem(id: prefix + "dna_m", title: "DNA 1,800", detail: "＋20%おまけ", icon: "sparkles", fallbackPrice: "¥480", consumable: true, tag: "人気", use: "強化を数段階まとめて上げられる量。ボスで詰まったときに"),
         IAPItem(id: prefix + "dna_l", title: "DNA 4,500", detail: "＋50%おまけ", icon: "diamond.fill", fallbackPrice: "¥980", consumable: true, use: "強化をしっかり進めて、先のワールドまで一気に進みたい人に"),
         IAPItem(id: prefix + "dna_xl", title: "DNA 12,000", detail: "＋100%おまけ", icon: "crown.fill", fallbackPrice: "¥2,000", consumable: true, tag: "最大", use: "いちばんお得。強化を大きく進めてゴールの神殿を目指せます"),
-        IAPItem(id: prefix + "secret", title: "シークレットキャラ", detail: "ギャラクシー・メカドラゴン（4段階進化）＋ DNA 1,000", icon: "sparkles.rectangle.stack.fill", fallbackPrice: "¥480", consumable: false, tag: "シークレット", use: "相棒にすると全ステージをメカドラゴンで出発。パワー2倍・ボスの耐性も無視する最強キャラ"),
         IAPItem(id: prefix + "gold", title: "金色キャラ確定ボックス", detail: "金色キャラ1体確定 ＋ DNA 300", icon: "seal.fill", fallbackPrice: "¥250", consumable: true, use: "金色キャラは図鑑に加わるレアな仲間。集めるほど図鑑がうまります"),
     ]
 }
@@ -53,7 +38,6 @@ struct DNAItem: Identifiable {
     static let all: [DNAItem] = [
         DNAItem(id: "revive", title: "復活チケット", detail: "負けた時に広告なしで復活", icon: "heart.fill", cost: 250, use: "ステージで負けても、その場から続きをプレイできます"),
         DNAItem(id: "start", title: "仲間2倍チケット", detail: "次のステージを仲間2倍でスタート", icon: "person.3.fill", cost: 120, use: "スタート時の仲間が2倍。ボス戦や苦手なステージの前に使うと効果大"),
-        DNAItem(id: "unique", title: "ユニーク：聖剣ドラゴン", detail: "世界に1体だけの白銀の竜〈エクスカリバー〉", icon: "shield.lefthalf.filled", cost: 5000, use: "相棒にすると聖剣ドラゴンで出発。パワー1.8倍・ボスの耐性も無視（1回だけ購入可）"),
         DNAItem(id: "revive5", title: "復活チケット ×5", detail: "まとめ買いで20%お得", icon: "heart.circle.fill", cost: 1000, use: "1枚あたり200 DNA。よく負けるステージがあるならこちら"),
     ]
 }
@@ -70,12 +54,6 @@ final class Shop: ObservableObject {
 
     private init() {
         if let raw = UserDefaults.standard.data(forKey: key), let v = try? JSONDecoder().decode(ShopState.self, from: raw) { s = v } else { s = ShopState() }
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "debugUnlockAll") {   // 確認用：特別キャラを全部解放
-            s.secret = true; s.unique = true
-            for e in Element.playable + [.none, .cosmic, .light] { Progress.shared.discoverLine(e) }
-        }
-        #endif
         updates = Task { [weak self] in
             for await r in Transaction.updates { await self?.handle(r) }
         }
@@ -86,20 +64,12 @@ final class Shop: ObservableObject {
     // MARK: チケット
     func useStartTicket() -> Bool { guard s.startTickets > 0 else { return false }; s.startTickets -= 1; save(); return true }
     func useReviveTicket() -> Bool { guard s.reviveTickets > 0 else { return false }; s.reviveTickets -= 1; save(); return true }
-    func ownedDNA(_ item: DNAItem) -> Bool { item.id == "unique" && s.unique }
-    func setPartner(_ e: Element?) { s.partner = e?.rawValue; save() }
-    var partner: Element? {
-        guard let p = s.partner, let e = Element(rawValue: p) else { return nil }
-        return (e == .cosmic && s.secret) || (e == .light && s.unique) ? e : nil
-    }
     func buy(_ item: DNAItem) -> Bool {
-        if ownedDNA(item) { return false }
         guard Progress.shared.spendDNA(item.cost) else { return false }
         switch item.id {
         case "revive": s.reviveTickets += 1
         case "revive5": s.reviveTickets += 5
         case "start": s.startTickets += 1
-        case "unique": s.unique = true; s.partner = "light"; Progress.shared.discoverLine(.light)
         default: break
         }
         save(); return true
@@ -114,7 +84,7 @@ final class Shop: ObservableObject {
     }
     func price(_ i: IAPItem) -> String { products[i.id]?.displayPrice ?? i.fallbackPrice }
     func owned(_ i: IAPItem) -> Bool {
-        (i.id.hasSuffix("starter") && s.starterBought) || (i.id.hasSuffix("noads") && s.noAds) || (i.id.hasSuffix("secret") && s.secret)
+        (i.id.hasSuffix("starter") && s.starterBought) || (i.id.hasSuffix("noads") && s.noAds)
     }
     var available: Bool { !products.isEmpty }
 
@@ -157,10 +127,6 @@ final class Shop: ObservableObject {
             let a = Meta.shared.grantShiny(), b = Meta.shared.grantShiny()
             gift = "DNA 3,000 ＋ " + [a, b].compactMap { $0 }.joined(separator: "・")
         case "noads": s.noAds = true; gift = "広告削除"
-        case "secret":
-            guard !s.secret else { return }
-            s.secret = true; s.partner = "cosmic"; Progress.shared.addDNA(1000); Progress.shared.discoverLine(.cosmic)
-            gift = "ギャラクシー・メカドラゴン ＋ DNA 1,000"
         case "dna_s": Progress.shared.addDNA(500); gift = "DNA 500"
         case "dna_m": Progress.shared.addDNA(1800); gift = "DNA 1,800"
         case "dna_l": Progress.shared.addDNA(4500); gift = "DNA 4,500"

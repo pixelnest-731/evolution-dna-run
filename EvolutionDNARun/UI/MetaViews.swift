@@ -196,7 +196,7 @@ struct DailyView: View {
                 }
             }
             Text("図鑑ボーナス").font(DS.font(20, .black)).foregroundStyle(.white).padding(.top, 8)
-            ForEach(Element.playable + [.none], id: \.self) { e in
+            ForEach([Element.fire, .ice, .thunder, .none], id: \.self) { e in
                 let found = (0..<4).filter { progress.data.discovered.contains("\(e.rawValue)-\($0)") }.count
                 let claimed = meta.d.collectionRewards.contains(e.rawValue)
                 Card {

@@ -8,11 +8,6 @@ enum CreatureCatalog {
             .fire: ["Embrin", "Pyrocub", "Blazewyrm", "Solaris Drake"],
             .ice: ["Frostlet", "Glacimite", "Rimeguard", "Aurora Leviathan"],
             .thunder: ["Zappit", "Voltwing", "Stormraptor", "Tempest Phoenix"],
-            .water: ["Finbit", "Sharkbite", "Tidal Jaws", "King Megalodon"],
-            .plant: ["Sproutdino", "Leafrex", "Thornasaur", "Verdant T-Rex"],
-            .dark: ["Shadepup", "Nightfang", "Dusk Howler", "Fenrir"],
-            .cosmic: ["Mecha Byte", "Star Mech", "Nova Mecha Drake", "Galaxy Mecha Dragon"],
-            .light: ["Excalibur", "Excalibur", "Excalibur", "Excalibur"],
         ]
         return base[element]?[min(sizeClass, 3)] ?? "Unknown"
     }
@@ -54,7 +49,6 @@ final class Progress: ObservableObject {
         if first { data.currentStage = max(data.currentStage, stage + 1); data.stagesSinceAd += 1 }
         save()
     }
-    func discoverLine(_ e: Element) { for k in 0..<4 { data.discovered.insert("\(e.rawValue)-\(k)") }; save() }
     func addDNA(_ n: Int) { data.dna += n; save() }
     func spendDNA(_ n: Int) -> Bool { guard data.dna >= n else { return false }; data.dna -= n; save(); return true }
     func resetAdCounter() { data.stagesSinceAd = 0; save() }

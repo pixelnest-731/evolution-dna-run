@@ -146,7 +146,7 @@ final class Meta: ObservableObject {
     }
     /// 色違い（金色）キャラを付与。返り値は表示名
     func grantShiny() -> String? {
-        let all = (Element.playable + [.none]).flatMap { e in (0..<4).map { (e, $0) } }
+        let all = [Element.fire, .ice, .thunder, .none].flatMap { e in (0..<4).map { (e, $0) } }
         guard let (e, k) = all.filter({ !d.shiny.contains("\($0.0.rawValue)-\($0.1)") }).randomElement() else { return nil }
         d.shiny.insert("\(e.rawValue)-\(k)")
         return "金色の" + CreatureCatalog.name(element: e, sizeClass: k)
