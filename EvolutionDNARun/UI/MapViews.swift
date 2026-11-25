@@ -2,12 +2,32 @@ import SwiftUI
 
 // MARK: - ワールドマップ（下から上へ進む冒険の道・ワールドごとの風景つき）
 struct MapView: View {
+    var justCleared: Int? = nil
     var onPlay: (Int) -> Void
     var onClose: () -> Void
     @ObservedObject var progress = Progress.shared
     @State private var anim = false
+    @State private var walker: Int = 0          // ドラゴンが立っているステージ
+    @State private var hop = false
+    @State private var banner: String?
+    @State private var bannerSub: String?
+    @State private var ready = false             // 歩き終わったら出発ボタンを強調
     private var current: Int { progress.data.currentStage }
-    private var worldCount: Int { World.of(current) + 2 }   // 次のワールドまで見せる
+    init(justCleared: Int? = nil, onPlay: @escaping (Int) -> Void, onClose: @escaping () -> Void) {
+        self.justCleared = justCleared; self.onPlay = onPlay; self.onClose = onClose
+        _walker = State(initialValue: justCleared ?? Progress.shared.data.currentStage)
+    }
+    static let finalStage = 60
+    private var worldsTotal: Int { max(Self.finalStage / World.size, World.of(current) + 2) }
+    static let goalH: CGFloat = 980
+    private var remaining: Int { max(0, Self.finalStage - current + 1) }
+
+    /// スクロール内容全体での座標
+    private func globalPoint(_ n: Int, W: CGFloat) -> CGPoint {
+        let w = World.of(max(1, n)), k = max(1, n) - w * World.size
+        let p = point(k, W: W)
+        return CGPoint(x: p.x, y: Self.goalH + CGFloat(worldsTotal - 1 - w) * Self.blockH + p.y)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -16,28 +36,87 @@ struct MapView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 0) {
-                            ForEach((0..<worldCount).reversed(), id: \.self) { w in
+                            GoalBlock(W: W, H: Self.goalH, remaining: remaining, anim: anim).id("goal")
+                            ForEach((0..<worldsTotal).reversed(), id: \.self) { w in
                                 worldBlock(w, W: W).id("w\(w)")
                             }
-                            // スタート地点の草原（出発ボタンに隠れないよう余白）
                             Rectangle().fill(MapTheme.sky(0).last!).frame(height: 200)
                         }
+                        .overlay(alignment: .topLeading) { walkerView.position(globalPoint(walker, W: W)) }
                     }
                     .scrollIndicators(.hidden)
                     .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { withAnimation(.easeOut(duration: 0.4)) { proxy.scrollTo("s\(current)", anchor: .center) } }
                         anim = true
+                        let target = "s\(walker)"
+                        // 一度ゴールを見せてから現在地へ戻る（果てしなさの演出）
+                        if justCleared == nil && !Self.seenGoal {
+                            Self.seenGoal = true
+                            proxy.scrollTo("goal", anchor: .top)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { withAnimation(.easeInOut(duration: 1.6)) { proxy.scrollTo(target, anchor: .center) } }
+                        } else {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { withAnimation(.easeOut(duration: 0.4)) { proxy.scrollTo(target, anchor: .center) } }
+                        }
+                        if let c = justCleared { celebrate(c, proxy: proxy) } else { ready = true }
                     }
                 }
                 .ignoresSafeArea(edges: .bottom)
-                // 上部のフェード（ヘッダーを読みやすく）
-                LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 110).ignoresSafeArea(edges: .top).allowsHitTesting(false)
-                header
+                LinearGradient(colors: [.black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+                VStack(spacing: 8) { header; goalMeter }
+                if let banner { clearBanner(banner, bannerSub).padding(.top, 150).transition(.scale.combined(with: .opacity)) }
                 startButton
             }
         }
         .background(Color(red: 0.08, green: 0.06, blue: 0.2).ignoresSafeArea())
+    }
+    nonisolated(unsafe) static var seenGoal = false
+
+    /// クリア演出：クリアバナー → ドラゴンが次のマスへ跳ねて移動 → 出発ボタンが光る
+    private func celebrate(_ c: Int, proxy: ScrollViewProxy) {
+        AudioEngine.shared.play("win", volume: 0.8)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) {
+            banner = "STAGE \(c) クリア！"
+            bannerSub = c % World.size == 0 ? "WORLD \(World.of(c) + 2) 「\(World.name(World.of(c) + 1))」解放！" : "ゴールまで あと \(remaining) ステージ"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+            let next = c + 1
+            withAnimation(.easeInOut(duration: c % World.size == 0 ? 1.4 : 0.9)) { walker = next; proxy.scrollTo("s\(next)", anchor: .center) }
+            withAnimation(.easeOut(duration: 0.22).repeatCount(4, autoreverses: true)) { hop = true }
+            for i in 0..<4 { DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.24) { AudioEngine.shared.play("tap", volume: 0.6) } }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
+            hop = false
+            AudioEngine.shared.play("gate_big", volume: 0.7); Haptics.shared.tap(0.7)
+            withAnimation(.easeOut(duration: 0.3)) { banner = nil; ready = true }
+        }
+    }
+
+    private var walkerView: some View {
+        VStack(spacing: -4) {
+            Text(walker == current ? "いまここ！" : "STAGE \(walker)").font(DS.font(12, .black)).foregroundStyle(DS.navy)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(.yellow, in: Capsule())
+            Thumb(e: .fire, k: 0, size: 62)
+        }
+        .phaseAnimator([false, true]) { v, up in v.offset(y: up ? -8 : 0) } animation: { _ in .easeInOut(duration: 0.55) }
+        .offset(y: hop ? -96 : -66)
+        .shadow(color: .black.opacity(0.4), radius: 4, y: 4)
+        .allowsHitTesting(false)
+    }
+
+    private func clearBanner(_ t: String, _ sub: String?) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) { ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill") } }
+                .font(.system(size: 26, weight: .black)).foregroundStyle(DS.gold).shadow(color: .orange, radius: 6)
+            Text(t).font(DS.font(34, .black)).italic()
+                .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.97, blue: 0.65), DS.goldDeep], startPoint: .top, endPoint: .bottom))
+                .shadow(color: Color(red: 0.35, green: 0.12, blue: 0.05), radius: 0, x: 0, y: 3)
+            if let sub { Text(sub).font(DS.font(15, .black)).foregroundStyle(.white) }
+        }
+        .padding(.horizontal, 26).padding(.vertical, 14)
+        .background(LinearGradient(colors: [Color(red: 0.4, green: 0.2, blue: 0.75), DS.navy], startPoint: .top, endPoint: .bottom).opacity(0.95), in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(DS.gold, lineWidth: 3))
+        .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+        .allowsHitTesting(false)
     }
 
     private var header: some View {
@@ -58,6 +137,31 @@ struct MapView: View {
         }.padding(.horizontal, 12).padding(.top, 4)
     }
 
+    /// 最終ゴールまでの道のり
+    private var goalMeter: some View {
+        let done = Double(min(Self.finalStage, current - 1)) / Double(Self.finalStage)
+        return HStack(spacing: 8) {
+            Thumb(e: .fire, k: 0, size: 26)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.black.opacity(0.45))
+                    Capsule().fill(LinearGradient(colors: [Color(red: 0.5, green: 1, blue: 0.4), DS.gold], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(10, g.size.width * done))
+                    ForEach(1..<(Self.finalStage / World.size), id: \.self) { i in
+                        Circle().fill(.white.opacity(0.8)).frame(width: 5).position(x: g.size.width * CGFloat(i) / CGFloat(Self.finalStage / World.size), y: g.size.height / 2)
+                    }
+                }
+            }.frame(height: 12).overlay(Capsule().stroke(.white.opacity(0.7), lineWidth: 1.5))
+            VStack(spacing: -2) {
+                Image(systemName: "crown.fill").font(.system(size: 18, weight: .black)).foregroundStyle(DS.gold)
+                Text("あと\(remaining)").font(DS.font(11, .black)).foregroundStyle(.white)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .background(DS.navy.opacity(0.8), in: Capsule())
+        .padding(.horizontal, 20)
+    }
+
     private var startButton: some View {
         VStack {
             Spacer()
@@ -65,13 +169,15 @@ struct MapView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 30, weight: .black))
                     VStack(alignment: .leading, spacing: -2) {
-                        Text("出発！").font(DS.font(26, .black))
-                        Text("STAGE \(current)\(current % World.size == 0 ? "  大ボス" : "")").font(DS.font(13, .bold)).opacity(0.9)
+                        Text(justCleared != nil ? "つぎへ！" : "出発！").font(DS.font(26, .black))
+                        Text("STAGE \(current)\(current % World.size == 0 ? " 👑" : "")").font(DS.font(13, .bold)).opacity(0.9)
                     }
                 }.foregroundStyle(.white).frame(width: 250, height: 80)
             }
             .buttonStyle(GameButtonStyle(top: Color(red: 0.55, green: 0.98, blue: 0.3), bottom: Color(red: 0.15, green: 0.72, blue: 0.15), radius: 40))
-            .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
+            .shadow(color: ready ? .yellow.opacity(0.8) : .black.opacity(0.45), radius: ready ? 18 : 10, y: 6)
+            .scaleEffect(ready && anim ? 1.04 : 1)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: ready)
             .padding(.bottom, 24)
         }
     }
@@ -195,17 +301,6 @@ struct MapView: View {
                             .background(Color.red, in: Capsule()).overlay(Capsule().stroke(.white, lineWidth: 1.5))
                     }
                 }.offset(y: 16)
-            }
-            .overlay(alignment: .top) {
-                if isCurrent {
-                    VStack(spacing: -4) {
-                        Text("いまここ！").font(DS.font(12, .black)).foregroundStyle(DS.navy)
-                            .padding(.horizontal, 8).padding(.vertical, 2).background(.yellow, in: Capsule())
-                        Thumb(e: .fire, k: 0, size: 62)
-                    }
-                    .offset(y: anim ? -78 : -64)
-                    .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: anim)
-                }
             }
         }
         .buttonStyle(.plain)
@@ -664,5 +759,97 @@ private extension Color {
         a.getRed(&r1, green: &g1, blue: &b1, alpha: &a1); b.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
         let f = CGFloat(t)
         return Color(red: r1 + (r2 - r1) * f, green: g1 + (g2 - g1) * f, blue: b1 + (b2 - b1) * f)
+    }
+}
+
+// MARK: - 最終ゴール（雲の上にそびえる伝説の神殿。はるか遠くに見える）
+private struct GoalBlock: View {
+    let W: CGFloat, H: CGFloat, remaining: Int, anim: Bool
+    var body: some View {
+        ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0.03, green: 0.01, blue: 0.12), Color(red: 0.2, green: 0.06, blue: 0.4), Color(red: 0.55, green: 0.25, blue: 0.6), Color(red: 0.95, green: 0.6, blue: 0.5)],
+                           startPoint: .top, endPoint: .bottom)
+            // 星空
+            Canvas { ctx, size in
+                var r = SeededRNG(99)
+                for _ in 0..<160 {
+                    let p = CGPoint(x: r.next() * size.width, y: r.next() * size.height * 0.75)
+                    let s = 0.8 + r.next() * 2.4
+                    ctx.fill(Path(ellipseIn: CGRect(x: p.x, y: p.y, width: s, height: s)), with: .color(.white.opacity(0.35 + Double(r.next()) * 0.6)))
+                }
+            }
+            // 後光
+            ZStack {
+                ForEach(0..<14, id: \.self) { i in
+                    Capsule().fill(LinearGradient(colors: [Color(red: 1, green: 0.9, blue: 0.5).opacity(0.55), .clear], startPoint: .bottom, endPoint: .top))
+                        .frame(width: 34, height: 380).offset(y: -190).rotationEffect(.degrees(Double(i) / 14 * 360))
+                }
+            }
+            .rotationEffect(.degrees(anim ? 360 : 0))
+            .animation(.linear(duration: 60).repeatForever(autoreverses: false), value: anim)
+            .position(x: W / 2, y: 360)
+            Circle().fill(RadialGradient(colors: [Color(red: 1, green: 0.95, blue: 0.7), Color(red: 1, green: 0.7, blue: 0.3).opacity(0.5), .clear], center: .center, startRadius: 10, endRadius: 230))
+                .frame(width: 460, height: 460).position(x: W / 2, y: 360)
+            temple.position(x: W / 2, y: 390)
+            // 遠くに浮かぶ島々
+            ForEach(0..<5, id: \.self) { i in
+                let x = [0.12, 0.88, 0.2, 0.82, 0.5][i] * W, y: CGFloat = [520, 560, 690, 720, 120][i]
+                island(scale: [0.9, 0.8, 0.6, 0.65, 0.4][i])
+                    .position(x: x, y: y + (anim ? -6 : 6))
+                    .animation(.easeInOut(duration: 2.5 + Double(i) * 0.4).repeatForever(autoreverses: true), value: anim)
+            }
+            // 雲海
+            ForEach(0..<9, id: \.self) { i in
+                Ellipse().fill(.white.opacity(0.9 - Double(i % 3) * 0.12))
+                    .frame(width: 220, height: 90)
+                    .position(x: CGFloat(i) / 8 * W + (anim ? 10 : -10), y: H - 170 + CGFloat(i % 3) * 40)
+                    .animation(.easeInOut(duration: 4 + Double(i % 3)).repeatForever(autoreverses: true), value: anim)
+                    .blur(radius: 2)
+            }
+            // 雲の中へ消えていく光の道（ここから先はまだ見えない）
+            Path { p in
+                p.move(to: CGPoint(x: W / 2, y: H)); p.addCurve(to: CGPoint(x: W / 2, y: 520), control1: CGPoint(x: W * 0.15, y: H - 220), control2: CGPoint(x: W * 0.85, y: 700))
+            }
+            .stroke(style: StrokeStyle(lineWidth: 10, lineCap: .round, dash: [2, 22]))
+            .foregroundStyle(Color(red: 1, green: 0.95, blue: 0.6).opacity(0.9))
+            .shadow(color: .yellow, radius: 6)
+            VStack(spacing: 4) {
+                Text("FINAL GOAL").font(DS.font(16, .black)).foregroundStyle(DS.gold).tracking(4)
+                Text("伝説のDNA神殿").font(DS.font(34, .black)).foregroundStyle(.white)
+                    .shadow(color: .purple, radius: 10)
+                Text("最強の王 〈ジェネシス〉 が待つ").font(DS.font(14, .bold)).foregroundStyle(.white.opacity(0.85))
+                Text(remaining > 0 ? "ゴールまで あと \(remaining) ステージ" : "ゴール到達！").font(DS.font(15, .black)).foregroundStyle(DS.navy)
+                    .padding(.horizontal, 14).padding(.vertical, 4).background(DS.gold, in: Capsule()).padding(.top, 6)
+            }.padding(.top, 175)
+        }
+        .frame(width: W, height: H).clipped()
+        .allowsHitTesting(false)
+    }
+
+    private var temple: some View {
+        let gold = LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.65), Color(red: 0.85, green: 0.55, blue: 0.15)], startPoint: .top, endPoint: .bottom)
+        return VStack(spacing: 0) {
+            Image(systemName: "crown.fill").font(.system(size: 46, weight: .black)).foregroundStyle(gold).shadow(color: .yellow, radius: 12)
+            Triangle().fill(gold).frame(width: 230, height: 70)
+            Rectangle().fill(Color(red: 0.95, green: 0.8, blue: 0.4)).frame(width: 240, height: 12)
+            HStack(spacing: 18) {
+                ForEach(0..<6, id: \.self) { _ in
+                    Rectangle().fill(LinearGradient(colors: [.white, Color(red: 0.9, green: 0.8, blue: 0.95)], startPoint: .leading, endPoint: .trailing)).frame(width: 16, height: 110)
+                }
+            }
+            .overlay { Image(systemName: "questionmark").font(.system(size: 40, weight: .black)).foregroundStyle(.white.opacity(0.9)).shadow(color: .purple, radius: 8)
+                .frame(width: 60, height: 90).background(Color(red: 0.25, green: 0.05, blue: 0.4), in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30)) }
+            Rectangle().fill(Color(red: 0.95, green: 0.8, blue: 0.4)).frame(width: 260, height: 14)
+            Rectangle().fill(Color(red: 0.8, green: 0.6, blue: 0.3)).frame(width: 290, height: 14)
+        }
+        .shadow(color: Color(red: 1, green: 0.8, blue: 0.3).opacity(0.8), radius: 20)
+    }
+
+    private func island(scale s: CGFloat) -> some View {
+        VStack(spacing: -6) {
+            Ellipse().fill(Color(red: 0.4, green: 0.85, blue: 0.5)).frame(width: 110 * s, height: 28 * s)
+            Triangle().fill(LinearGradient(colors: [Color(red: 0.55, green: 0.4, blue: 0.5), Color(red: 0.25, green: 0.15, blue: 0.3)], startPoint: .top, endPoint: .bottom))
+                .frame(width: 100 * s, height: 80 * s).rotationEffect(.degrees(180))
+        }.opacity(0.85)
     }
 }

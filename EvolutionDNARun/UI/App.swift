@@ -19,7 +19,7 @@ enum DS {
 }
 
 struct RootView: View {
-    enum Screen: Equatable { case home, game(Int), collection, map }
+    enum Screen: Equatable { case home, game(Int), collection, map(Int?) }
     @State private var screen: Screen = .home
     @State private var runID = 0   // 同じステージのリトライでもゲームを作り直す
     @ObservedObject var progress = Progress.shared
@@ -30,13 +30,17 @@ struct RootView: View {
         ZStack {
             switch screen {
             case .home:
-                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = d > 0 ? .game(d) : .map },
+                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = d > 0 ? .game(d) : .map(nil) },
                          onCollection: { screen = .collection },
                          onBossRush: { RunBoost.bossRush = 0; runID += 1; screen = .game(RootView.rushStage(0)) })
             case .game(let s):
-                GameScreen(stageIndex: s, onExit: { next in runID += 1; if next == nil { RunBoost.bossRush = nil }; screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
-            case .map:
-                MapView(onPlay: { n in RunBoost.bossRush = nil; runID += 1; screen = .game(n) }, onClose: { screen = .home })
+                GameScreen(stageIndex: s, onExit: { next in
+                    runID += 1; if next == nil { RunBoost.bossRush = nil }
+                    // 通常ステージをクリアしたら、マップで次のステージへ進む演出を見せる
+                    if let n = next, n == s + 1, RunBoost.bossRush == nil { screen = .map(s); return }
+                    screen = next.map { .game($0) } ?? .home }).id("\(s)-\(runID)")
+            case .map(let cleared):
+                MapView(justCleared: cleared, onPlay: { n in RunBoost.bossRush = nil; runID += 1; screen = .game(n) }, onClose: { screen = .home })
             case .collection:
                 CollectionView(onClose: { screen = .home })
             }
