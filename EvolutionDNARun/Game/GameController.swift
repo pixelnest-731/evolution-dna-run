@@ -148,7 +148,7 @@ final class GameController: NSObject, ObservableObject {
         let gz = [Float(-4)] + stage.rows.map(\.z)
         for i in 0..<(gz.count - 1) {
             let lane: Float = (i % 2 == 0 ? -1 : 1) * 1.3
-            for k in 0..<4 {
+            for k in 0..<7 {
                 let z0 = gz[i] - 4 - Float(k) * 1.8
                 if z0 < gz[i + 1] + 2 { break }
                 let h = Helix.node(); h.position = SCNVector3(lane, 1.0, z0); h.eulerAngles.z = -0.5
@@ -567,7 +567,7 @@ final class GameController: NSObject, ObservableObject {
         for i in 0..<10 { let d: CGFloat = i % 2 == 0 ? 0.28 : -0.28; jitter.append(.moveBy(x: d, y: 0, z: 0, duration: 0.04)); jitter.append(.moveBy(x: -d, y: 0, z: 0, duration: 0.04)) }
         plane.runAction(.sequence(jitter))
         flash?.runAction(.repeat(.sequence([.fadeOpacity(to: 0.9, duration: 0.05), .fadeOpacity(to: 0, duration: 0.07)]), count: 6))
-        for k in 0..<4 {
+        for k in 0..<7 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(k) * 0.18) { [weak self] in
                 guard let self else { return }
                 AudioEngine.shared.play("boss_hit", volume: 0.8)

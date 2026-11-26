@@ -151,7 +151,7 @@ enum StageGenerator {
         // 難易度カーブ: 0(序盤)→1(ステージ40以降)
         let t = min(1.0, Double(index - 2) / 38.0)
         // コースは長め：6列(ステージ2)→最大14列。3列ごとに小ボスが道をふさぐ
-        let rowCount = min(6 + index / 3, 14)
+        let rowCount = min(9 + index / 4, 16)   // 1ステージ約35〜45秒（人気の増殖ランナーと同程度）
         var rows: [GateRow] = []
         var miniRows: [Int] = []
         var z: Float = -16
@@ -174,7 +174,7 @@ enum StageGenerator {
             }
             if Bool.random(using: &rng) { swap(&a, &b) }
             rows.append(GateRow(z: z, left: a, right: b))
-            z -= Float.random(in: 13...17, using: &rng)
+            z -= Float.random(in: 17...21, using: &rng)
             if (r + 1) % 3 == 0 && r < rowCount - 1 { miniRows.append(r); z -= 12 }   // 小ボス用の広場
         }
         var obstacles: [ObstacleDef] = []
@@ -193,13 +193,13 @@ enum StageGenerator {
             var m = MiniBossDef(z: zMid, afterRow: r, boss: BossDef(name: k.name, hp: 1, weakness: k.weakness, resist: index <= 8 ? .none : k.resist, kind: k.rawValue))
             // 全ルートの力の分布で決める：序盤はほぼ全ルートで勝てる → 後半は上位半分のルートだけ
             let ps = Solver.powers(stage, rowsUsed: r + 1, against: m.boss)
-            m.boss.hp = max(3, (Solver.percentile(ps, 0.15 + 0.4 * t) * (0.7 + 0.25 * t)).rounded())
+            m.boss.hp = max(3, (Solver.percentile(ps, 0.12 + 0.2 * t) * (0.7 + 0.15 * t)).rounded())
             stage.minis.append(m)
         }
         // 大ボス：生き残るルートの力の分布で決める。序盤は下位2割のルートでも勝てる → 後半は上位25%のみ。
         // ワールドボスはさらに強い
         let ps = Solver.powers(stage)
-        let pct = min(stage.isWorldBoss ? 0.95 : 0.9, 0.35 + 0.5 * t + (stage.isWorldBoss ? 0.1 : 0) + Double.random(in: 0...0.05, using: &rng) * t)
+        let pct = min(stage.isWorldBoss ? 0.92 : 0.85, 0.35 + 0.42 * t + (stage.isWorldBoss ? 0.1 : 0) + Double.random(in: 0...0.05, using: &rng) * t)
         stage.boss.hp = max(8, (Solver.percentile(ps, pct) * (0.85 + 0.15 * t)).rounded())
         return stage
     }
@@ -219,7 +219,7 @@ enum StageGenerator {
     }()
 }
 
-/// 全ルート総当たり（行数≤14 → 16384通り）。小ボスで全滅するルートは除外。
+/// 全ルート総当たり（行数≤16 → 65536通り）。小ボスで全滅するルートは除外。
 /// 障害物は回避可能なため含めない＝上界。
 enum Solver {
     /// ルート mask で rowsUsed 列まで進んだ後の群れ（途中の小ボスに負けたら nil）
