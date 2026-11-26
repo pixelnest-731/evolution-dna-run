@@ -222,7 +222,8 @@ final class GameController: NSObject, ObservableObject {
 
     private var dragging = false
     func drag(dx: CGFloat, width: CGFloat) {
-        if phase == .ready { start() }
+        // タップ（ホームボタン等）では始めない。指を横に動かしたらスタート
+        if phase == .ready { guard abs(dx) > 6 else { return }; start() }
         if !dragging { dragging = true; dragStartX = targetX }
         let tx = Float(dx / max(1, width)) * 9 * GameSettings.sensitivity
         targetX = max(-WorldBuilder.laneHalfWidth + 0.6, min(WorldBuilder.laneHalfWidth - 0.6, dragStartX + tx))
