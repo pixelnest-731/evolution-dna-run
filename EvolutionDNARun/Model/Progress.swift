@@ -46,7 +46,8 @@ final class Progress: ObservableObject {
         data.cleared.insert(stage)
         data.dna += dna
         data.discovered.insert("\(element.rawValue)-\(sizeClass)")
-        if first { data.currentStage = max(data.currentStage, stage + 1); data.stagesSinceAd += 1 }
+        if first { data.currentStage = max(data.currentStage, stage + 1) }
+        data.stagesSinceAd += 1
         save()
     }
     /// ステージごとの最高★（セーブ形式を変えないよう UserDefaults に保存）
@@ -57,6 +58,8 @@ final class Progress: ObservableObject {
     }
     func addDNA(_ n: Int) { data.dna += n; save() }
     func spendDNA(_ n: Int) -> Bool { guard data.dna >= n else { return false }; data.dna -= n; save(); return true }
+    /// 負けたプレイも広告カウントに入れる
+    func countPlayForAd() { data.stagesSinceAd += 1; save() }
     func resetAdCounter() { data.stagesSinceAd = 0; save() }
     func discover(_ e: Element, _ k: Int) {
         if data.discovered.insert("\(e.rawValue)-\(k)").inserted { save() }

@@ -172,8 +172,11 @@ final class Meta: ObservableObject {
     var canAdRevive: Bool { d.adRevivesToday < 10 }
     func usedAdRevive() { d.adRevivesToday += 1; save() }
     /// インタースティシャル：ステージ6以降・3クリアごと・前回から90秒以上
+    /// 報酬型広告を見た直後は、しばらく全画面広告を出さない
+    func noteRewardedWatched() { d.lastInterstitial = Date(); save() }
     func shouldShowInterstitial(stage: Int) -> Bool {
-        guard !Shop.shared.s.noAds, stage >= 6, Progress.shared.data.stagesSinceAd >= 3, Date().timeIntervalSince(d.lastInterstitial) > 90 else { return false }
+        // 人気の増殖ランナー準拠：ステージ4以降、1プレイ（勝ち負け問わず）ごと。ただし前の広告から35秒は空ける
+        guard !Shop.shared.s.noAds, stage >= 4, Progress.shared.data.stagesSinceAd >= 1, Date().timeIntervalSince(d.lastInterstitial) > 35 else { return false }
         d.lastInterstitial = Date(); Progress.shared.resetAdCounter(); save(); return true
     }
 }

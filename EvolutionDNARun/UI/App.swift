@@ -515,8 +515,9 @@ struct ResultCard: View {
     private func next(_ won: Bool) {
         if let n = RunBoost.bossRush { if won { onExit(RootView.rushStage(n)) } else { onExit(nil) }; return }
         let target = won ? game.stage.index + 1 : game.stage.index
-        if won && Meta.shared.shouldShowInterstitial(stage: game.stage.index) {
-            AdService.shared.showInterstitial("ステージ間") { onExit(target) }
+        if !won { Progress.shared.countPlayForAd() }
+        if Meta.shared.shouldShowInterstitial(stage: game.stage.index) {
+            AdService.shared.showInterstitial(won ? "ステージ間" : "リトライ前") { onExit(target) }
         } else { onExit(target) }
     }
     var body: some View {

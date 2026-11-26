@@ -23,7 +23,7 @@ final class AdService: ObservableObject {
     /// 報酬型広告：最後まで見たら true
     func showRewarded(_ placement: String, done: @escaping (Bool) -> Void) {
         AudioEngine.shared.duck(true)
-        current = Request(rewarded: true, placement: placement) { ok in AudioEngine.shared.duck(false); done(ok) }
+        current = Request(rewarded: true, placement: placement) { ok in AudioEngine.shared.duck(false); if ok { Meta.shared.noteRewardedWatched() }; done(ok) }
     }
     func showInterstitial(_ placement: String, done: @escaping () -> Void) {
         current = Request(rewarded: false, placement: placement) { _ in done() }
