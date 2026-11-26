@@ -131,6 +131,10 @@ final class GameController: NSObject, ObservableObject {
             let rr = GateBuilder.gate(r.right, width: w); rr.position = SCNVector3(w / 2 + 0.05, 0, r.z)
             for (g, n) in [(r.left, l), (r.right, rr)] where g == .evolve(stage.boss.weakness) { n.addChildNode(Self.weakBadge()) }
             scene.rootNode.addChildNode(l); scene.rootNode.addChildNode(rr)
+            // 中央の仕切り柱：真ん中を通って両方取ることはできない（どちらか一方を選ぶ）
+            let post = SCNNode(geometry: SCNCylinder(radius: 0.16, height: 3.3))
+            post.geometry!.materials = [Toon.mat(UIColor(red: 0.75, green: 0.78, blue: 0.9, alpha: 1), rimStrength: 0.3)]
+            post.position = SCNVector3(0, 1.65, r.z); scene.rootNode.addChildNode(post)
             gateNodes.append((i, l, rr))
         }
         for o in stage.obstacles {
@@ -252,6 +256,11 @@ final class GameController: NSObject, ObservableObject {
         }
         z -= speed * dt
         x += (targetX - x) * min(1, dt * 12)
+        // ゲート直前で真ん中にいたら、仕切り柱に押されてどちらかのレーンへ
+        if nextRow < stage.rows.count, z - stage.rows[nextRow].z < 2.5, abs(x) < 0.5 {
+            let side: Float = (abs(targetX) > 0.01 ? targetX : x) >= 0 ? 1 : -1
+            x = side * 0.5; if abs(targetX) < 0.5 { targetX = side * 0.5 }
+        }
         swarmNode.position = SCNVector3(x, 0, z)
         progress = min(1, z / (stage.length + 8))
 

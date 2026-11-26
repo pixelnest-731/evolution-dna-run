@@ -170,7 +170,7 @@ enum StageGenerator {
                 let good: [GateKind] = [.add(10), .add(20), .add(50), .mul(2), .mul(3), .mul(5)]
                 let bad: [GateKind] = [.sub(10), .sub(20), .div(2)]
                 a = good.randomElement(using: &rng)!
-                b = Double.random(in: 0..<1, using: &rng) < (index <= 3 ? 0 : 0.1 + 0.25 * t) ? bad.randomElement(using: &rng)! : good.randomElement(using: &rng)!
+                b = Double.random(in: 0..<1, using: &rng) < (index <= 2 ? 0 : 0.15 + 0.3 * t) ? bad.randomElement(using: &rng)! : good.randomElement(using: &rng)!
             }
             if Bool.random(using: &rng) { swap(&a, &b) }
             rows.append(GateRow(z: z, left: a, right: b))
@@ -193,14 +193,14 @@ enum StageGenerator {
             var m = MiniBossDef(z: zMid, afterRow: r, boss: BossDef(name: k.name, hp: 1, weakness: k.weakness, resist: index <= 8 ? .none : k.resist, kind: k.rawValue))
             // 全ルートの力の分布で決める：序盤はほぼ全ルートで勝てる → 後半は上位半分のルートだけ
             let ps = Solver.powers(stage, rowsUsed: r + 1, against: m.boss)
-            m.boss.hp = max(2, (Solver.percentile(ps, 0.05 + 0.3 * t) * (0.6 + 0.25 * t)).rounded())
+            m.boss.hp = max(3, (Solver.percentile(ps, 0.15 + 0.4 * t) * (0.7 + 0.25 * t)).rounded())
             stage.minis.append(m)
         }
         // 大ボス：生き残るルートの力の分布で決める。序盤は下位2割のルートでも勝てる → 後半は上位25%のみ。
         // ワールドボスはさらに強い
         let ps = Solver.powers(stage)
-        let pct = min(0.92, 0.2 + 0.55 * t + (stage.isWorldBoss ? 0.12 : 0) + Double.random(in: 0...0.05, using: &rng) * t)
-        stage.boss.hp = max(8, (Solver.percentile(ps, pct) * (0.75 + 0.2 * t)).rounded())
+        let pct = min(stage.isWorldBoss ? 0.95 : 0.9, 0.35 + 0.5 * t + (stage.isWorldBoss ? 0.1 : 0) + Double.random(in: 0...0.05, using: &rng) * t)
+        stage.boss.hp = max(8, (Solver.percentile(ps, pct) * (0.85 + 0.15 * t)).rounded())
         return stage
     }
 
