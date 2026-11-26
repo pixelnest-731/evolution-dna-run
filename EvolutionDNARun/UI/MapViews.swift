@@ -291,8 +291,9 @@ struct MapView: View {
                 VStack(spacing: 2) {
                     if cleared {
                         HStack(spacing: 0) {
-                            ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill") }
-                        }.font(.system(size: 11, weight: .black)).foregroundStyle(.yellow)
+                            let st = max(1, Progress.stars(n))
+                            ForEach(0..<3, id: \.self) { i in Image(systemName: "star.fill").foregroundStyle(i < st ? Color.yellow : Color.white.opacity(0.35)) }
+                        }.font(.system(size: 11, weight: .black))
                         .shadow(color: .black.opacity(0.6), radius: 1, y: 1)
                     }
                     if boss {

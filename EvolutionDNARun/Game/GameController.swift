@@ -17,6 +17,9 @@ final class GameController: NSObject, ObservableObject {
     @Published var dnaCollected = 0
     @Published var element: Element = .none
     @Published var sizeClass = 0
+    /// クリア評価（★1〜3）：ボスに対する力の余裕で決まる
+    @Published var stars = 0
+    private var miniHPLabels: [SCNNode] = []
     private var pickups: [(node: SCNNode, z: Float, x: Float, taken: Bool)] = []
 
     struct Popup: Identifiable { let id = UUID(); let text: String; let color: Color }
@@ -36,6 +39,8 @@ final class GameController: NSObject, ObservableObject {
     private var minis: [(def: MiniBossDef, node: SCNNode)] = []
     private var nextMini = 0
     private var clashT: Float?
+    /// 小ボス戦の前にいたレーン（戦闘後に戻す。中央のまま次のゲートに入ると左右があいまいになるため）
+    private var preClashX: Float = 0
     @Published var miniBossesDefeated = 0
     /// HUD用：小ボスのコース上の位置（0〜1）
     var miniMarks: [Float] { stage.minis.map { min(1, $0.z / (stage.length + 8)) } }
@@ -56,6 +61,8 @@ final class GameController: NSObject, ObservableObject {
     @Published var revived = false
     /// 負けた時のボス残りHP（0〜1）。ニアミス演出用
     @Published var lostBossHP: Double?
+    /// 負けた理由（結果画面に表示）
+    @Published var lostReason: String?
     var isBossRush: Bool { RunBoost.bossRush != nil }
     var rewardDNA: Int { Int(Double(20 + stage.index * 5 + dnaCollected) * Meta.shared.dnaMultiplier) }
     private var abilityBonus = 1.0
@@ -120,6 +127,7 @@ final class GameController: NSObject, ObservableObject {
             let w = WorldBuilder.laneHalfWidth - 0.15
             let l = GateBuilder.gate(r.left, width: w); l.position = SCNVector3(-w / 2 - 0.05, 0, r.z)
             let rr = GateBuilder.gate(r.right, width: w); rr.position = SCNVector3(w / 2 + 0.05, 0, r.z)
+            for (g, n) in [(r.left, l), (r.right, rr)] where g == .evolve(stage.boss.weakness) { n.addChildNode(Self.weakBadge()) }
             scene.rootNode.addChildNode(l); scene.rootNode.addChildNode(rr)
             gateNodes.append((i, l, rr))
         }
@@ -147,10 +155,10 @@ final class GameController: NSObject, ObservableObject {
             n.scale = SCNVector3(0.42, 0.42, 0.42); n.position = SCNVector3(0, 0, m.z - 1.5)
             let wrap = SCNNode(); wrap.addChildNode(n)
             let hp = SCNNode(geometry: { let t = SCNText(string: "HP " + GameSettings.format(Int(m.boss.hp)) + " " + m.boss.weakness.symbol, extrusionDepth: 0.05)
-                t.font = UIFont.systemFont(ofSize: 0.5, weight: .heavy).rounded(); t.flatness = 0.05; t.materials = [Mat.glow(UIColor(red: 1, green: 0.55, blue: 0.55, alpha: 1))]; return t }())
+                t.font = UIFont.systemFont(ofSize: 0.75, weight: .heavy).rounded(); t.flatness = 0.05; t.materials = [Mat.glow(UIColor(red: 1, green: 0.55, blue: 0.55, alpha: 1))]; return t }())
             let (mn, mx) = hp.boundingBox; hp.pivot = SCNMatrix4MakeTranslation((mx.x + mn.x) / 2, mn.y, 0)
             hp.position = SCNVector3(0, 3.4, m.z - 1.5); hp.constraints = [SCNBillboardConstraint()]; hp.name = "hp"
-            wrap.addChildNode(hp)
+            wrap.addChildNode(hp); miniHPLabels.append(hp)
             scene.rootNode.addChildNode(wrap); minis.append((m, wrap))
         }
         let boss = BossFactory.build(BossKind(rawValue: stage.boss.kind) ?? .gorilla); boss.position = SCNVector3(0, 0, stage.length - 4)
@@ -160,8 +168,30 @@ final class GameController: NSObject, ObservableObject {
 
         rebuildUnits(animated: false)
         updateLabel()
+        updateMiniColors()
         updateCamera(dt: 1)
 
+    }
+
+    /// 大ボスの弱点ゲートの上に「ボスの弱点！」の目印
+    private static func weakBadge() -> SCNNode {
+        let t = SCNText(string: String(localized: "ボスの弱点！"), extrusionDepth: 0.05)
+        t.font = UIFont.systemFont(ofSize: 0.42, weight: .heavy).rounded(); t.flatness = 0.05
+        t.materials = [Mat.glow(UIColor(red: 1, green: 0.95, blue: 0.3, alpha: 1))]
+        let n = SCNNode(geometry: t); let (mn, mx) = n.boundingBox
+        n.pivot = SCNMatrix4MakeTranslation((mx.x + mn.x) / 2, mn.y, 0); n.position = SCNVector3(0, 3.1, 0)
+        n.runAction(.repeatForever(.sequence([.moveBy(x: 0, y: 0.18, z: 0, duration: 0.45), .moveBy(x: 0, y: -0.18, z: 0, duration: 0.45)])))
+        return n
+    }
+
+    /// 小ボスのHP表示を色分け：今の力で勝てる＝緑、負ける＝赤
+    private func updateMiniColors() {
+        let mult = Meta.shared.powerMultiplier
+        for (i, m) in minis.enumerated() where i >= nextMini && i < miniHPLabels.count {
+            let win = swarm.power(against: m.def.boss) * mult >= m.def.boss.hp
+            let c = win ? UIColor(red: 0.45, green: 1, blue: 0.45, alpha: 1) : UIColor(red: 1, green: 0.4, blue: 0.4, alpha: 1)
+            miniHPLabels[i].geometry?.firstMaterial?.diffuse.contents = c
+        }
     }
 
     func start() {
@@ -201,7 +231,7 @@ final class GameController: NSObject, ObservableObject {
     private func runStep(_ dt: Float) {
         if clashT != nil { clashStep(dt); return }
         if nextMini < minis.count, z <= minis[nextMini].def.z + 2.5 {
-            clashT = 0; targetX = 0
+            clashT = 0; preClashX = targetX; targetX = 0
             AudioEngine.shared.play("boss_roar", volume: 0.6); Haptics.shared.rumble(0.4, intensity: 0.5); shake = 0.25
             popup(String(localized: "小ボス出現！"), .orange)
             return
@@ -236,7 +266,7 @@ final class GameController: NSObject, ObservableObject {
                     popup("−\(o.def.kills)", .red); shake = 0.35
                     o.node.runAction(.sequence([.scale(to: 1.4, duration: 0.08), .scale(to: 1, duration: 0.15)]))
                     afterCountChange(old: displayCount)
-                    if swarm.count == 0 { lose(); return }
+                    if swarm.count == 0 { lostReason = String(localized: "ウイルスにぶつかって全滅…よけて進もう"); lose(); return }
                 }
             }
         }
@@ -262,8 +292,9 @@ final class GameController: NSObject, ObservableObject {
         guard t >= 1.0 else { return }
         clashT = nil
         let old = swarm.count
-        if swarm.fight(m.def.boss) {
+        if swarm.fight(m.def.boss, mult: Meta.shared.powerMultiplier) {
             nextMini += 1; miniBossesDefeated += 1; dnaCollected += 5
+            if !dragging { targetX = preClashX }
             AudioEngine.shared.play("shatter", volume: 0.7); Haptics.shared.tap(1, sharp: 0.7); shake = 0.4
             let p = SCNVector3(0, 1.5, m.def.z - 1.5)
             scene.addParticleSystem(FX.burst(color: UIColor(red: 1, green: 0.7, blue: 0.3, alpha: 1), count: 220, speed: 10, size: 0.3), transform: SCNMatrix4MakeTranslation(p.x, p.y, p.z))
@@ -271,6 +302,7 @@ final class GameController: NSObject, ObservableObject {
             popup(String(localized: "小ボス撃破！"), .yellow)
             afterCountChange(old: old)
         } else {
+            lostReason = String(localized: "小ボスの方が強かった…HPが赤い小ボスは要注意")
             lose()
         }
     }
@@ -309,6 +341,7 @@ final class GameController: NSObject, ObservableObject {
 
     private func afterCountChange(old: Int) {
         let target = swarm.count
+        updateMiniColors()
         AudioEngine.shared.setIntensity(target >= 200 ? 2 : (target >= 20 ? 1 : 0))
         rebuildUnits(animated: target > old)
         // カウントアップ
@@ -346,7 +379,7 @@ final class GameController: NSObject, ObservableObject {
             guard let self else { return }
             self.scene.addParticleSystem(FX.burst(color: Palette.color(e), count: 300, speed: 8, size: 0.25), transform: SCNMatrix4MakeTranslation(self.x, 0.6, self.z))
             self.rebuildUnits(animated: true, force: true)
-            self.updateLabel()
+            self.updateLabel(); self.updateMiniColors()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in self?.evolvedName = nil }
     }
@@ -360,7 +393,7 @@ final class GameController: NSObject, ObservableObject {
             Haptics.shared.tap(1, sharp: 0.3); self.shake = 0.3
             self.scene.addParticleSystem(FX.burst(color: UIColor(red: 0.85, green: 0.5, blue: 1, alpha: 1), count: 280, speed: 9, size: 0.3), transform: SCNMatrix4MakeTranslation(self.x, 0.8, self.z))
             self.rebuildUnits(animated: true, force: true)
-            self.sizeClass = self.swarm.sizeClass; Progress.shared.discover(self.swarm.element, self.swarm.sizeClass)
+            self.sizeClass = self.swarm.sizeClass; self.updateMiniColors(); Progress.shared.discover(self.swarm.element, self.swarm.sizeClass)
             self.displayCount = self.swarm.count; self.updateLabel()
             self.popup("MERGE!", .purple)
             self.evolvedName = CreatureCatalog.name(element: self.swarm.element, sizeClass: self.swarm.sizeClass)
@@ -392,20 +425,20 @@ final class GameController: NSObject, ObservableObject {
             let p = u.position; let k = min(1, dt * 7)
             u.position = SCNVector3(p.x + (tgt.x - p.x) * k, p.y + (tgt.y - p.y) * k, p.z + (tgt.z - p.z) * k)
         }
-        countLabel.position = SCNVector3(0, 1.4 * unitScale + spread * 0.3, 0)
+        countLabel.position = SCNVector3(0, 2.4 * unitScale + spread * 0.3, 0)
     }
 
     private func updateLabel() {
         let t = SCNText(string: GameSettings.format(displayCount), extrusionDepth: 0.1)
         t.font = UIFont.systemFont(ofSize: 1.1, weight: .heavy).rounded(); t.flatness = 0.05
-        let m = Mat.glow(.white); t.materials = [m]
-        countLabel.geometry = t
-        let (mn, mx) = countLabel.boundingBox
+        let m = Mat.glow(.white); m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false; t.materials = [m]
+        countLabel.geometry = t; countLabel.renderingOrder = 101
+        let (mn, mx) = t.boundingBox   // 子の背景板を含めない（含めると毎回広がる）
         countLabel.pivot = SCNMatrix4MakeTranslation((mx.x + mn.x) / 2, mn.y, 0)
         if countLabel.childNodes.isEmpty {
             let bgP = SCNPlane(width: 1, height: 0.9); bgP.cornerRadius = 0.45; let bg = SCNNode(geometry: bgP)
-            bg.geometry!.materials = [{ let m = Mat.glow(UIColor(red: 0.05, green: 0.15, blue: 0.25, alpha: 0.75)); m.writesToDepthBuffer = false; return m }()]
-            bg.name = "bg"; bg.renderingOrder = -1; countLabel.addChildNode(bg)
+            bg.geometry!.materials = [{ let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = UIColor(red: 0.05, green: 0.12, blue: 0.3, alpha: 1); m.transparency = 0.8; m.isDoubleSided = true; m.writesToDepthBuffer = false; m.readsFromDepthBuffer = false; return m }()]
+            bg.name = "bg"; bg.renderingOrder = 100; countLabel.addChildNode(bg)
         }
         let w = CGFloat(mx.x - mn.x) + 0.6
         (countLabel.childNode(withName: "bg", recursively: false)?.geometry as? SCNPlane)?.width = w
@@ -548,6 +581,9 @@ final class GameController: NSObject, ObservableObject {
         // ⑤ ファンファーレ 2.1秒
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) { AudioEngine.shared.play("win") }
         Meta.shared.track(.bossWin)
+        let margin = playerPower * Meta.shared.powerMultiplier / max(1, stage.boss.hp)
+        stars = revived ? 1 : (margin >= 3 ? 3 : (margin >= 1.6 ? 2 : 1))
+        if !isBossRush { Progress.recordStars(stage.index, stars) }
         if isBossRush {
             Progress.shared.addDNA(rewardDNA); Progress.shared.discover(swarm.element, swarm.sizeClass)
             RunBoost.bossRush = (RunBoost.bossRush ?? 0) + 1; Meta.shared.recordBossRush(RunBoost.bossRush!)
@@ -559,16 +595,23 @@ final class GameController: NSObject, ObservableObject {
     private func lose() {
         lostInBoss = phase == .boss
         lostBossHP = lostInBoss ? bossHP : nil
+        if lostInBoss { lostReason = nil }
         if isBossRush, let n = RunBoost.bossRush { Meta.shared.recordBossRush(n) }
         phase = .lost; abilityReady = false
         AudioEngine.shared.stop(); AudioEngine.shared.play("gate_bad")
         Haptics.shared.rumble(0.4, intensity: 0.6)
     }
 
+    /// ボス戦で負けたとき、復活（攻撃力2倍＋バースト）で勝てる見込みがあるか。無理なら広告を見せない
+    var reviveCanWin: Bool {
+        guard lostInBoss else { return true }
+        return playerPower * Meta.shared.powerMultiplier * 2 * 1.25 >= bossMax * max(0.05, bossHP)
+    }
+
     /// 広告視聴で復活：ボス戦なら残りHPから仲間の力2倍で再戦、道中なら仲間10体で再開
     func revive(byTicket: Bool = false) {
         guard phase == .lost, !revived else { return }
-        revived = true; if !byTicket { Meta.shared.usedAdRevive() }
+        revived = true; lostReason = nil; if !byTicket { Meta.shared.usedAdRevive() }
         AudioEngine.shared.startBGM(); AudioEngine.shared.setIntensity(2)
         if lostInBoss {
             bossMax *= max(0.05, bossHP); battleT = 0; revivePower = 2

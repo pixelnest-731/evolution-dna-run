@@ -49,6 +49,12 @@ final class Progress: ObservableObject {
         if first { data.currentStage = max(data.currentStage, stage + 1); data.stagesSinceAd += 1 }
         save()
     }
+    /// ステージごとの最高★（セーブ形式を変えないよう UserDefaults に保存）
+    static func stars(_ stage: Int) -> Int { (UserDefaults.standard.dictionary(forKey: "stars") as? [String: Int])?["\(stage)"] ?? 0 }
+    static func recordStars(_ stage: Int, _ n: Int) {
+        var d = (UserDefaults.standard.dictionary(forKey: "stars") as? [String: Int]) ?? [:]
+        d["\(stage)"] = max(d["\(stage)"] ?? 0, n); UserDefaults.standard.set(d, forKey: "stars")
+    }
     func addDNA(_ n: Int) { data.dna += n; save() }
     func spendDNA(_ n: Int) -> Bool { guard data.dna >= n else { return false }; data.dna -= n; save(); return true }
     func resetAdCounter() { data.stagesSinceAd = 0; save() }

@@ -408,7 +408,7 @@ struct GameScreen: View {
                         StageDots(progress: game.progress, minis: game.miniMarks)
                     }
                     Spacer()
-                    GemCounter(value: progress.data.dna + (game.phase == .won ? 0 : game.dnaCollected)).scaleEffect(0.85)
+                    GemCounter(value: progress.data.dna + (game.phase == .won || game.phase == .lost ? 0 : game.dnaCollected)).scaleEffect(0.85)
                 }.padding(.horizontal, 12).padding(.top, 4)
                 HStack(alignment: .top) {
                     EvolutionPanel(element: game.element, sizeClass: game.sizeClass)
@@ -518,7 +518,12 @@ struct ResultCard: View {
                         .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.6), DS.goldDeep], startPoint: .top, endPoint: .bottom))
                         .shadow(color: Color(red: 0.4, green: 0.15, blue: 0.05), radius: 0, x: 0, y: 4)
                 }
-                HStack(spacing: 6) { ForEach(0..<3) { _ in Image(systemName: "star.fill").font(.system(size: 40)).foregroundStyle(DS.gold).shadow(color: .orange, radius: 6) } }
+                if RunBoost.bossRush == nil {
+                    HStack(spacing: 6) { ForEach(0..<3) { i in Image(systemName: "star.fill").font(.system(size: 40)).foregroundStyle(i < game.stars ? DS.gold : Color.white.opacity(0.25)).shadow(color: i < game.stars ? .orange : .clear, radius: 6) } }
+                    if game.stars < 3 {
+                        Text(game.revived ? "★3: 復活なしでクリア＋ボスの3倍の力" : "★3: ボスの3倍の力で倒そう").font(DS.font(14, .bold)).foregroundStyle(.white.opacity(0.85))
+                    }
+                }
                 if let n = RunBoost.bossRush { Text("🔥 \(n) 連勝！").font(DS.font(22, .black)).foregroundStyle(.orange) }
                 HStack { Text("💎"); Text("+\(game.rewardDNA * (tripled ? 3 : 1))").font(DS.font(26)).foregroundStyle(.white) }
                 if !tripled {
@@ -529,19 +534,23 @@ struct ResultCard: View {
                 if game.element != .none { Thumb(e: game.element, k: game.sizeClass, size: 100) }
             } else {
                 Text("GAME OVER").font(DS.font(38, .black)).foregroundStyle(.white)
+                if let r = game.lostReason { Text(r).font(DS.font(16, .black)).foregroundStyle(.yellow).multilineTextAlignment(.center) }
                 if let hp = game.lostBossHP {
                     // ニアミス演出：あと少しだったことを強調
                     Text(hp < 0.3 ? "おしい！ あと \(max(1, Int(hp * 100)))% で倒せた！" : "ボスの残りHP \(Int(hp * 100))%").font(DS.font(20, .black))
                         .foregroundStyle(hp < 0.3 ? .yellow : .white)
                     ProgressView(value: 1 - hp).tint(.red).frame(width: 220)
                 }
-                if !game.revived && Shop.shared.s.reviveTickets > 0 {
+                if !game.revived && game.reviveCanWin && Shop.shared.s.reviveTickets > 0 {
                     Button { if Shop.shared.useReviveTicket() { game.revive(byTicket: true) } } label: {
                         Label("復活チケットを使う（残り\(Shop.shared.s.reviveTickets)）", systemImage: "heart.fill").font(DS.font(16, .black)).foregroundStyle(.white)
                             .padding(.horizontal, 16).frame(height: 46).background(Color.pink, in: Capsule())
                     }
                 }
-                if !game.revived && Meta.shared.canAdRevive {
+                if !game.revived && !game.reviveCanWin {
+                    Text("力の差が大きすぎて、復活しても勝てません").font(DS.font(13, .bold)).foregroundStyle(.white.opacity(0.75))
+                }
+                if !game.revived && game.reviveCanWin && Meta.shared.canAdRevive {
                     AdButton(title: game.lostBossHP != nil ? "広告で復活！攻撃力2倍" : "広告でその場から復活") {
                         AdService.shared.showRewarded("復活") { ok in if ok { game.revive() } }
                     }

@@ -106,9 +106,10 @@ struct Swarm: Equatable {
     mutating func apply(_ g: GateKind) {
         switch g {
         case .add(let n): count += max(1, n / Int(pow(10.0, Double(sizeClass))))
-        case .sub(let n): count -= n
+        // マイナスゲートで即全滅はしない（最低1体残る）。全滅は障害物・ボス戦のみ
+        case .sub(let n): count = max(1, count - n)
         case .mul(let n): count *= n
-        case .div(let n): count /= n
+        case .div(let n): count = max(1, count / n)
         case .evolve(let e): element = e
         case .fuse:
             if count >= 10 && sizeClass < 3 { count /= 10; sizeClass += 1 }
@@ -120,8 +121,8 @@ struct Swarm: Equatable {
     mutating func hit(_ o: ObstacleDef) { count = max(0, count - o.kills) }
 
     /// 小ボス戦。勝てば true（HPに応じて仲間を一部失う）
-    mutating func fight(_ b: BossDef) -> Bool {
-        let p = power(against: b)
+    mutating func fight(_ b: BossDef, mult: Double = 1) -> Bool {
+        let p = power(against: b) * mult
         guard p >= b.hp, p > 0 else { return false }
         let loss = Int((Double(count) * 0.6 * b.hp / p).rounded(.up))
         count = max(1, count - loss)
