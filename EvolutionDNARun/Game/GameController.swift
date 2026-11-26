@@ -19,6 +19,8 @@ final class GameController: NSObject, ObservableObject {
     @Published var sizeClass = 0
     /// クリア評価（★1〜3）：ボスに対する力の余裕で決まる
     @Published var stars = 0
+    /// シーンの準備（シェーダー等の読み込み）が終わったら true。それまでローディング画面を出す
+    @Published var loaded = false
     private var miniHPLabels: [SCNNode] = []
     private var pickups: [(node: SCNNode, z: Float, x: Float, taken: Bool)] = []
 
@@ -157,7 +159,17 @@ final class GameController: NSObject, ObservableObject {
             let hp = SCNNode(geometry: { let t = SCNText(string: "HP " + GameSettings.format(Int(m.boss.hp)) + " " + m.boss.weakness.symbol, extrusionDepth: 0.05)
                 t.font = UIFont.systemFont(ofSize: 0.75, weight: .heavy).rounded(); t.flatness = 0.05; t.materials = [Mat.glow(UIColor(red: 1, green: 0.55, blue: 0.55, alpha: 1))]; return t }())
             let (mn, mx) = hp.boundingBox; hp.pivot = SCNMatrix4MakeTranslation((mx.x + mn.x) / 2, mn.y, 0)
-            hp.position = SCNVector3(0, 3.4, m.z - 1.5); hp.constraints = [SCNBillboardConstraint()]; hp.name = "hp"
+            hp.position = SCNVector3(0, 4.3, m.z - 1.5); hp.constraints = [SCNBillboardConstraint()]; hp.name = "hp"
+            // ゲートに重ならないよう常に最前面＋紺色の下地
+            hp.geometry?.firstMaterial?.readsFromDepthBuffer = false; hp.renderingOrder = 91
+            do {
+                let (mn, mx) = hp.geometry!.boundingBox
+                let pl = SCNPlane(width: CGFloat(mx.x - mn.x) + 0.5, height: CGFloat(mx.y - mn.y) + 0.35); pl.cornerRadius = pl.height / 2
+                let bm = SCNMaterial(); bm.lightingModel = .constant; bm.diffuse.contents = UIColor(red: 0.05, green: 0.12, blue: 0.3, alpha: 1)
+                bm.transparency = 0.8; bm.isDoubleSided = true; bm.writesToDepthBuffer = false; bm.readsFromDepthBuffer = false; pl.materials = [bm]
+                let bg = SCNNode(geometry: pl); bg.position = SCNVector3((mx.x + mn.x) / 2, (mx.y + mn.y) / 2, -0.06); bg.renderingOrder = 90
+                hp.addChildNode(bg)
+            }
             wrap.addChildNode(hp); miniHPLabels.append(hp)
             scene.rootNode.addChildNode(wrap); minis.append((m, wrap))
         }
@@ -165,6 +177,7 @@ final class GameController: NSObject, ObservableObject {
         if stage.isWorldBoss { boss.scale = SCNVector3(1.35, 1.35, 1.35) }
         scene.rootNode.addChildNode(boss); bossNode = boss
         bossMax = stage.boss.hp; bossHP = 1
+        view.prepare([scene]) { [weak self] _ in DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.3)) { self?.loaded = true } } }
 
         rebuildUnits(animated: false)
         updateLabel()

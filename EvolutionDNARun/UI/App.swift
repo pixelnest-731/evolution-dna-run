@@ -465,6 +465,17 @@ struct GameScreen: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.6), value: game.evolvedName)
+            if !game.loaded {
+                ZStack {
+                    LinearGradient(colors: [DS.violet, DS.navy], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        Thumb(e: .fire, k: 0, size: 110)
+                        Text(game.stage.isWorldBoss ? "STAGE \(game.stage.index) 👑" : "STAGE \(game.stage.index)").font(DS.font(34, .black)).foregroundStyle(.white)
+                        Text("ボスの弱点 \(game.stage.boss.weakness.symbol)").font(DS.font(18, .black)).foregroundStyle(DS.gold)
+                        ProgressView().controlSize(.large).tint(.white)
+                    }
+                }.transition(.opacity)
+            }
             if game.phase == .won || game.phase == .lost { ResultCard(game: game, onExit: onExit).transition(.scale.combined(with: .opacity)) }
         }
         .contentShape(Rectangle())

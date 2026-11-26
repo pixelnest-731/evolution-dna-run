@@ -291,7 +291,7 @@ struct MapView: View {
                 VStack(spacing: 2) {
                     if cleared {
                         HStack(spacing: 0) {
-                            let st = max(1, Progress.stars(n))
+                            let st = Progress.stars(n) == 0 ? 3 : Progress.stars(n)   // 評価導入前のクリアは従来どおり★3
                             ForEach(0..<3, id: \.self) { i in Image(systemName: "star.fill").foregroundStyle(i < st ? Color.yellow : Color.white.opacity(0.35)) }
                         }.font(.system(size: 11, weight: .black))
                         .shadow(color: .black.opacity(0.6), radius: 1, y: 1)
