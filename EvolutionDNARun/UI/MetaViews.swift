@@ -7,6 +7,13 @@ import UIKit
 @MainActor
 final class AdService: ObservableObject {
     static let shared = AdService()
+    /// 広告を出せる状態か。AdMob SDK 接続前のリリースビルドでは false にして、
+    /// 「テスト表示」の仮広告や広告ボタンが審査・本番で出ないようにする（審査ガイドライン 2.1）。
+    #if DEBUG
+    static let available = true
+    #else
+    static let available = false   // AdMob 接続後に true へ（オーナー承認事項）
+    #endif
     struct Request: Identifiable { let id = UUID(); let rewarded: Bool; let placement: String; let done: (Bool) -> Void }
     @Published var current: Request? { didSet { present() } }
     private var window: UIWindow?
@@ -22,10 +29,12 @@ final class AdService: ObservableObject {
     }
     /// 報酬型広告：最後まで見たら true
     func showRewarded(_ placement: String, done: @escaping (Bool) -> Void) {
+        guard AdService.available else { done(false); return }
         AudioEngine.shared.duck(true)
         current = Request(rewarded: true, placement: placement) { ok in AudioEngine.shared.duck(false); if ok { Meta.shared.noteRewardedWatched() }; done(ok) }
     }
     func showInterstitial(_ placement: String, done: @escaping () -> Void) {
+        guard AdService.available else { done(); return }
         current = Request(rewarded: false, placement: placement) { _ in done() }
     }
 }
@@ -117,6 +126,9 @@ struct AdButton: View {
     let title: String
     let action: () -> Void
     var body: some View {
+        if AdService.available { button }
+    }
+    private var button: some View {
         Button(action: action) {
             HStack(spacing: 6) { Image(systemName: "play.rectangle.fill"); Text(title) }
                 .font(DS.font(16, .black)).foregroundStyle(.white).padding(.horizontal, 16).padding(.vertical, 10)
@@ -229,6 +241,9 @@ struct ChestView: View {
             Text("🎁").font(.system(size: 120)).rotationEffect(.degrees(shake ? 8 : -8))
                 .animation(.easeInOut(duration: 0.12).repeatCount(shake ? 6 : 0, autoreverses: true), value: shake)
             Text("10回に1回はレア（金色キャラ）確定！ あと \(10 - meta.d.chestsOpened % 10) 回").font(DS.font(14, .bold)).foregroundStyle(.yellow)
+            // 排出率の表示（審査ガイドライン 3.1.1 ランダム報酬）。Meta.openChest の確率と一致させること
+            Text("排出率：金色キャラ 8% ／ 強化レベルアップ 17% ／ DNA 60〜250 75%\n（金色キャラがコンプ済み・強化が最大の場合はDNAに置き換え。10回目ごとに金色キャラ確定）")
+                .font(DS.font(11, .bold)).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             if let r = result {
                 Card {
                     VStack(spacing: 6) {

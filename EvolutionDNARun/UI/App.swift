@@ -30,7 +30,7 @@ struct RootView: View {
         ZStack {
             switch screen {
             case .home:
-                HomeView(onPlay: { RunBoost.bossRush = nil; let d = UserDefaults.standard.integer(forKey: "debugStage"); screen = d > 0 ? .game(d) : .map(nil) },
+                HomeView(onPlay: { RunBoost.bossRush = nil; let d = AppLinks.debugStage; screen = d > 0 ? .game(d) : .map(nil) },
                          onCollection: { screen = .collection },
                          onBossRush: { RunBoost.bossRush = 0; runID += 1; screen = .game(RootView.rushStage(0)) })
             case .game(let s):
@@ -317,8 +317,8 @@ struct SettingsView: View {
                 }
                 Section("サポート") {
                     Button("遊び方") { info = "左右にスワイプしてゲートを選び、仲間を増やしましょう。\nボスの弱点の属性に進化すると2倍のダメージ！\n10体以上で「融合」ゲートを通ると強い個体に。" }
-                    Button("プライバシーポリシー") { info = "公開前に掲載予定です。" }
-                    Button("利用規約") { info = "公開前に掲載予定です。" }
+                    if let u = AppLinks.privacyPolicy { Link("プライバシーポリシー", destination: u) }
+                    if let u = AppLinks.terms { Link("利用規約", destination: u) }
                     Button("クレジット") { info = "Evolution DNA Run\n企画・開発・音楽: AI開発チーム\nイラスト: オーナー提供" }
                     LabeledContent("バージョン", value: version)
                 }

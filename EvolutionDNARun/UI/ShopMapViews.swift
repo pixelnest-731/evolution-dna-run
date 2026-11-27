@@ -40,7 +40,7 @@ struct ShopView: View {
             }
             Button("購入を復元") { Task { await shop.restore() } }.font(DS.font(14, .bold)).foregroundStyle(.white.opacity(0.8))
             if !shop.available {
-                Text("※ 課金アイテムは App Store 登録後に購入できるようになります（今は表示のみ）").font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
+                Text(AppLinks.storeUnavailableNote).font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
             }
         }
         .overlay { if shop.busy { ProgressView().controlSize(.large).tint(.white) } }

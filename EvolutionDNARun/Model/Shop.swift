@@ -27,7 +27,7 @@ struct IAPItem: Identifiable {
         IAPItem(id: prefix + "dna_m", title: "DNA 1,800", detail: "＋20%おまけ", icon: "sparkles", fallbackPrice: "¥480", consumable: true, tag: "人気", use: "強化を数段階まとめて上げられる量。ボスで詰まったときに"),
         IAPItem(id: prefix + "dna_l", title: "DNA 4,500", detail: "＋50%おまけ", icon: "diamond.fill", fallbackPrice: "¥980", consumable: true, use: "強化をしっかり進めて、先のワールドまで一気に進みたい人に"),
         IAPItem(id: prefix + "dna_xl", title: "DNA 12,000", detail: "＋100%おまけ", icon: "crown.fill", fallbackPrice: "¥2,000", consumable: true, tag: "最大", use: "いちばんお得。強化を大きく進めてゴールの神殿を目指せます"),
-        IAPItem(id: prefix + "gold", title: "金色キャラ確定ボックス", detail: "金色キャラ1体確定 ＋ DNA 300", icon: "seal.fill", fallbackPrice: "¥250", consumable: true, use: "金色キャラは図鑑に加わるレアな仲間。集めるほど図鑑がうまります"),
+        IAPItem(id: prefix + "gold", title: "金色キャラ確定ボックス", detail: "金色キャラ1体確定 ＋ DNA 300（全種コンプ済みの場合はDNA 800）", icon: "seal.fill", fallbackPrice: "¥250", consumable: true, use: "金色キャラは図鑑に加わるレアな仲間。集めるほど図鑑がうまります"),
     ]
 }
 
@@ -89,7 +89,7 @@ final class Shop: ObservableObject {
     var available: Bool { !products.isEmpty }
 
     func purchase(_ i: IAPItem) async {
-        guard let p = products[i.id] else { message = "ストアに接続できません。\n（App Store 登録後に購入できるようになります）"; return }
+        guard let p = products[i.id] else { message = AppLinks.storeUnavailableNote; return }
         busy = true; defer { busy = false }
         do {
             switch try await p.purchase() {
